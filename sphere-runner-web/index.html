@@ -132,13 +132,6 @@ const DIFF = {
 };
 const P = () => DIFF[opts.diff] || DIFF.medium;
 const SHRINK_FACTOR = 0.85, MIN_R = 12, SHRINK_TIME = 1.5;
-// Planets you hop between. Each has its own size, so the curve and lap length change.
-const THEMES = [
-  { name: 'MEADOW',  R: 45, sky: 0x8cc0f2, globe: 0x59b366, track: 0x4a4a57, dash: 0xf2f2f2, deco: [0x3f8c4d, 0x73cc73, 0x99804f, 0xd9d9e6, 0x2f6e3a] },
-  { name: 'DUNES',   R: 36, sky: 0xf5c993, globe: 0xe3c27d, track: 0x8a6a4a, dash: 0xfff1d6, deco: [0xc99a55, 0x7d9c4a, 0xf0dfae, 0xb5763f, 0x9c7a4a] },
-  { name: 'GLACIER', R: 54, sky: 0xb4d4f0, globe: 0xe6f2fb, track: 0x5f7090, dash: 0xffffff, deco: [0xffffff, 0xa8d8f0, 0x6a8caa, 0xcfe6f5, 0x8fb5d0] },
-  { name: 'EMBER',   R: 30, sky: 0x3b2540, globe: 0x4a2f2f, track: 0x2a2a30, dash: 0xff8a3d, deco: [0x2a1a1a, 0xff6a2a, 0x6a3a2a, 0x8c2a1a, 0x3a2a2a] },
-];
 const HOP_TIME = 2.6, HOP_H = 14, HOP_EVERY_LAPS = 2;
 // Pacing: a wave of obstacles, then a calm stretch of coins.
 const WAVE_M = { easy: 220, medium: 260, hard: 300 }, CALM_M = 70;
@@ -169,7 +162,6 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x8cc0f2);
 const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 300);
 scene.add(new THREE.HemisphereLight(0xdfefff, 0x557755, 1.4));
 const sun = new THREE.DirectionalLight(0xffffff, 2.2);
@@ -212,20 +204,143 @@ function box(w, h, d, color, opacity = 1) {
 // World: a globe that rotates around the X axis. The player sits on top.
 // Anything on the globe is placed by (phi = globe-local angle, x = lane offset, y = height).
 // =====================================================================
+// ---------------------------------------------------------------------
+// Theme kit building blocks: low-poly shapes and flat-shaded materials.
+// ---------------------------------------------------------------------
+const G = {
+  box: boxGeo,
+  cone4: new THREE.ConeGeometry(1, 1, 4),
+  cone5: new THREE.ConeGeometry(1, 1, 5),
+  cone6: new THREE.ConeGeometry(1, 1, 6),
+  cyl6: new THREE.CylinderGeometry(1, 1, 1, 6),
+  cyl8: new THREE.CylinderGeometry(1, 1, 1, 8),
+  frustum: new THREE.CylinderGeometry(0.3, 1, 1, 7),
+  ico0: new THREE.IcosahedronGeometry(1, 0),
+  ico1: new THREE.IcosahedronGeometry(1, 1),
+  dodec: new THREE.DodecahedronGeometry(1, 0),
+  octa: new THREE.OctahedronGeometry(1, 0),
+  hemi: new THREE.SphereGeometry(1, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2),
+};
+const flatCache = {};
+function flat(color, emissive = 0) {
+  const key = color + '_' + emissive;
+  if (!flatCache[key]) flatCache[key] = new THREE.MeshLambertMaterial({ color, flatShading: true, emissive: emissive ? color : 0, emissiveIntensity: emissive });
+  return flatCache[key];
+}
+
+// Scenery props: each is a few parts { g: geometry, c: colour, p: position, s: scale, r: rotation, e: glow }.
+const PROPS = {
+  // Meadow
+  tree:   [{ g: 'cyl6', c: 0x8a5a3a, p: [0, 0.6, 0], s: [0.16, 1.2, 0.16] }, { g: 'ico0', c: 0x5fae4e, p: [0, 1.75, 0], s: [0.9, 1.0, 0.9] }],
+  tree2:  [{ g: 'cyl6', c: 0x8a5a3a, p: [0, 0.5, 0], s: [0.14, 1.0, 0.14] }, { g: 'ico0', c: 0x8bc34a, p: [0, 1.45, 0], s: [0.75, 0.8, 0.75] }],
+  pine:   [{ g: 'cyl6', c: 0x7a4e30, p: [0, 0.3, 0], s: [0.12, 0.6, 0.12] }, { g: 'cone6', c: 0x2f7a4a, p: [0, 1.15, 0], s: [0.8, 1.3, 0.8] }, { g: 'cone6', c: 0x3a8c55, p: [0, 1.85, 0], s: [0.58, 1.0, 0.58] }],
+  rock:   [{ g: 'dodec', c: 0x9a9a9a, p: [0, 0.2, 0], s: [0.7, 0.5, 0.6] }],
+  house:  [{ g: 'box', c: 0xf3ead8, p: [0, 0.55, 0], s: [1.4, 1.1, 1.2] }, { g: 'cone4', c: 0xc0533a, p: [0, 1.5, 0], s: [1.2, 0.8, 1.05], r: [0, Math.PI / 4, 0] }, { g: 'box', c: 0x6b4a33, p: [0, 0.3, 0.61], s: [0.3, 0.6, 0.04] }],
+  bush:   [{ g: 'ico0', c: 0x4e9a45, p: [0, 0.25, 0], s: [0.55, 0.45, 0.55] }],
+  // Dunes
+  cactus: [{ g: 'cyl6', c: 0x5f9b4a, p: [0, 0.8, 0], s: [0.22, 1.6, 0.22] }, { g: 'cyl6', c: 0x5f9b4a, p: [0.32, 1.1, 0], s: [0.12, 0.55, 0.12] }, { g: 'cyl6', c: 0x5f9b4a, p: [-0.3, 0.85, 0], s: [0.12, 0.45, 0.12] }, { g: 'box', c: 0x5f9b4a, p: [0.2, 0.85, 0], s: [0.3, 0.12, 0.12] }],
+  pyramid:[{ g: 'cone4', c: 0xd9b56a, p: [0, 1.2, 0], s: [2.2, 2.4, 2.2], r: [0, Math.PI / 4, 0] }],
+  palm:   [{ g: 'cyl6', c: 0x9a6b40, p: [0, 1.2, 0], s: [0.12, 2.4, 0.12], r: [0, 0, 0.12] }, { g: 'ico0', c: 0x4f9e3f, p: [0.15, 2.45, 0], s: [1.1, 0.25, 1.1] }],
+  mesa:   [{ g: 'cyl6', c: 0xb5703a, p: [0, 0.6, 0], s: [1.3, 1.2, 1.3] }, { g: 'cyl6', c: 0xc98450, p: [0, 1.25, 0], s: [1.15, 0.1, 1.15] }],
+  dune:   [{ g: 'hemi', c: 0xe8c98a, p: [0, -0.1, 0], s: [1.8, 0.7, 1.4] }],
+  // Glacier
+  spike:  [{ g: 'cone5', c: 0xbfe6ff, p: [0, 1.0, 0], s: [0.4, 2.0, 0.4], e: 0.15 }, { g: 'cone5', c: 0xd9f1ff, p: [0.35, 0.6, 0.1], s: [0.25, 1.2, 0.25], e: 0.15 }],
+  snowpine:[{ g: 'cone6', c: 0x2f5a4a, p: [0, 0.9, 0], s: [0.8, 1.4, 0.8] }, { g: 'cone6', c: 0xffffff, p: [0, 1.7, 0], s: [0.5, 0.7, 0.5] }],
+  igloo:  [{ g: 'hemi', c: 0xf4fbff, p: [0, 0, 0], s: [0.9, 0.85, 0.9] }, { g: 'box', c: 0x9cc3df, p: [0, 0.22, 0.82], s: [0.36, 0.44, 0.3] }],
+  iceRock:[{ g: 'octa', c: 0x9cc3df, p: [0, 0.4, 0], s: [0.6, 0.8, 0.6] }],
+  snowman:[{ g: 'ico1', c: 0xffffff, p: [0, 0.35, 0], s: [0.4, 0.4, 0.4] }, { g: 'ico1', c: 0xffffff, p: [0, 0.9, 0], s: [0.28, 0.28, 0.28] }, { g: 'cone4', c: 0xff8a2a, p: [0, 0.92, -0.3], s: [0.06, 0.25, 0.06], r: [-Math.PI / 2, 0, 0] }],
+  // Ember
+  volcano:[{ g: 'frustum', c: 0x3a2a2a, p: [0, 1.0, 0], s: [1.6, 2.0, 1.6] }, { g: 'cyl8', c: 0xff5a1f, p: [0, 2.0, 0], s: [0.45, 0.06, 0.45], e: 1 }],
+  shard:  [{ g: 'octa', c: 0x5a2a6a, p: [0, 0.8, 0], s: [0.35, 1.2, 0.35], e: 0.25 }, { g: 'octa', c: 0x7a3a8a, p: [0.3, 0.45, 0], s: [0.2, 0.7, 0.2], e: 0.25 }],
+  deadtree:[{ g: 'box', c: 0x2a1e1e, p: [0, 0.7, 0], s: [0.12, 1.4, 0.12] }, { g: 'box', c: 0x2a1e1e, p: [0.18, 1.1, 0], s: [0.08, 0.6, 0.08], r: [0, 0, -0.7] }],
+  lava:   [{ g: 'cyl8', c: 0xff6a1f, p: [0, 0.02, 0], s: [0.9, 0.05, 0.9], e: 1 }],
+  ashrock:[{ g: 'dodec', c: 0x4a3a3a, p: [0, 0.25, 0], s: [0.7, 0.55, 0.6] }],
+};
+
+// Planets you hop between. Each has its own size, so the curve and lap length change.
+// ground: [low, mid, high] patch colours; water: low areas; props: { name: weight }.
+const THEMES = [
+  { name: 'MEADOW', R: 45, skyTop: 0x5f9fe6, skyBottom: 0xcfe8f7, ground: [0x6cbf5a, 0x5aa84d, 0x8a9a58], water: 0x4fa3d9, shore: 0xe3d39a,
+    track: 0x8a7a68, curb: 0xe9dfcc, dash: 0xfff6e0, sun: 0xfff1a8, cloud: 0xffffff, clouds: 12,
+    props: { tree: 5, tree2: 4, pine: 4, rock: 3, house: 2, bush: 4 } },
+  { name: 'DUNES', R: 36, skyTop: 0xf0a05a, skyBottom: 0xfbe3b8, ground: [0xe8c98a, 0xdcb672, 0xc99a5a], water: 0x3fb8c0, shore: 0x9cc47a,
+    track: 0x6e4e3e, curb: 0xc9a06a, dash: 0xffe9c2, sun: 0xffe08a, cloud: 0xfff4e0, clouds: 4,
+    props: { cactus: 5, pyramid: 1, palm: 3, mesa: 2, dune: 5 } },
+  { name: 'GLACIER', R: 54, skyTop: 0x6f9fd8, skyBottom: 0xe6f2fb, ground: [0xf4fbff, 0xe2eef7, 0xcfe0ee], water: 0x9cc8e8, shore: 0xffffff,
+    track: 0x5d7ea8, curb: 0xffffff, dash: 0xe6f6ff, sun: 0xffffff, cloud: 0xffffff, clouds: 16,
+    props: { spike: 4, snowpine: 5, igloo: 1, iceRock: 3, snowman: 1 } },
+  { name: 'EMBER', R: 30, skyTop: 0x1a1024, skyBottom: 0x5a2a3a, ground: [0x4a3030, 0x3a2626, 0x5a3a32], water: 0xff5a1f, shore: 0x2a1a1a,
+    track: 0x2c2a30, curb: 0xff7a2a, dash: 0xff9a4a, sun: 0xff7a4a, cloud: 0x4a3a40, clouds: 8, glowWater: true,
+    props: { volcano: 2, shard: 4, deadtree: 4, lava: 3, ashrock: 4 } },
+];
+
+// ---------------------------------------------------------------------
+// Planet surface: a bumpy low-poly globe with flat colour patches.
+// Height is in metres, deterministic, and always below the road near the track.
+// ---------------------------------------------------------------------
+const TERRAIN_AMP = 2.4;
+function terrainH(v, Rt) {
+  let h = 0.6 * Math.sin(3.1 * v.x + 1.3) * Math.sin(2.3 * v.y + 0.7) * Math.sin(2.9 * v.z + 2.2)
+        + 0.4 * Math.sin(7.1 * v.x + 0.4) * Math.sin(6.3 * v.y + 1.9) * Math.sin(5.7 * v.z + 0.2);
+  h *= TERRAIN_AMP * 1.8;
+  // Flatten and sink the ground next to the road.
+  const d = Math.abs(v.x) * Rt - (TRACK_HALF + 0.5);
+  const t = THREE.MathUtils.smoothstep(d, 0, 4);
+  return h * t - 0.35 * (1 - t);
+}
+const WATER_H = -1.1;
+function buildGlobe(th) {
+  const geo = new THREE.IcosahedronGeometry(1, 7);
+  const pos = geo.attributes.position, colors = [];
+  const v = new THREE.Vector3(), c = new THREE.Color(), pr = th.R - 0.3;
+  const hs = [];
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i).normalize();
+    const h = Math.max(terrainH(v, th.R), WATER_H);
+    hs.push(h);
+    v.multiplyScalar(1 + h / pr);
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  for (let f = 0; f < pos.count; f += 3) {
+    const h = (hs[f] + hs[f + 1] + hs[f + 2]) / 3;
+    const near = Math.min(...[f, f + 1, f + 2].map(i => Math.abs(pos.getX(i)) * pr)) < TRACK_HALF + 1.2;
+    let col = h <= WATER_H + 0.05 ? th.water : h < WATER_H + 0.45 ? th.shore : h < 0.5 ? th.ground[0] : h < 1.6 ? th.ground[1] : th.ground[2];
+    if (near && h > WATER_H + 0.05) col = th.ground[0];
+    c.setHex(col);
+    const jitter = 0.94 + ((f * 7919) % 13) / 100;          // patchwork variation per facet
+    c.multiplyScalar(jitter);
+    for (let k = 0; k < 3; k++) colors.push(c.r, c.g, c.b);
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
 let R = opts.size;                  // current track radius
 let targetR = R, shrinkFrom = R, shrinkT = 1;
 
 const planet = new THREE.Group();
 scene.add(planet);
 
-const globe = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), mat(0x59b366));
+const globeMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+const glowGlobeMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, emissive: 0x401000 });
+const globe = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), globeMat);
 globe.receiveShadow = true;
 planet.add(globe);
 
-const track = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 128, 1), mat(0x4a4a57));
+const track = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 160, 1), flat(0x8a7a68));
 track.rotation.z = Math.PI / 2;     // axis along X
 track.receiveShadow = true;
 planet.add(track);
+// Raised curbs along both edges of the road.
+const curbs = [-1, 1].map(s => {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 160, 1), flat(0xe9dfcc));
+  m.rotation.z = Math.PI / 2;
+  m.userData.side = s;
+  m.receiveShadow = true;
+  planet.add(m);
+  return m;
+});
 
 const AX = new THREE.Vector3(1, 0, 0);
 function place(obj, phi, x, yCenter) {
@@ -234,14 +349,15 @@ function place(obj, phi, x, yCenter) {
   obj.quaternion.setFromAxisAngle(AX, -phi);
 }
 
-// Lane dashes give a sense of speed. Count is based on the largest size so they stay dense.
+// Lane dashes give a sense of speed.
 const dashes = [];
 {
   const n = 96;
   for (let i = 0; i < n; i++) {
     for (const side of [-0.5, 0.5]) {
-      const d = box(0.1, 0.03, 1.2, 0xf2f2f2);
-      d.castShadow = false;
+      const d = new THREE.Mesh(boxGeo, flat(0xf2f2f2));
+      d.scale.set(0.1, 0.03, 1.2);
+      d.receiveShadow = true;
       d.userData = { phi: (i / n) * Math.PI * 2, x: side * LANE_W };
       planet.add(d);
       dashes.push(d);
@@ -249,48 +365,148 @@ const dashes = [];
   }
 }
 
-// Scenery cubes on the globe (fixed seed: every lap looks the same, so laps are noticeable).
-const deco = [];
-{
-  let seed = 7;
+// ---------------------------------------------------------------------
+// Scenery: instanced props (one draw call per prop part), fixed seed per planet
+// so every lap looks the same and laps are noticeable.
+// ---------------------------------------------------------------------
+let propMeshes = [], propInstances = [];
+function buildProps(th) {
+  for (const m of propMeshes) planet.remove(m);
+  propMeshes = []; propInstances = [];
+  let seed = 7 + th.R;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const colors = [0x3f8c4d, 0x73cc73, 0x99804f, 0xd9d9e6, 0x2f6e3a];
-  while (deco.length < 260) {
-    const v = new THREE.Vector3(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1);
+  const names = Object.keys(th.props), total = Object.values(th.props).reduce((a, b) => a + b, 0);
+  const COUNT = 340;
+  const perProp = {};
+  for (const n of names) perProp[n] = [];
+  const v = new THREE.Vector3();
+  let guard = 0;
+  while (propInstances.length < COUNT && guard++ < 5000) {
+    v.set(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1);
     const len = v.length();
     if (len < 0.1 || len > 1) continue;
     v.normalize();
-    const s = 0.6 + rnd() * 1.8, h = s * (0.8 + rnd() * 1.7);
-    const ci = Math.floor(rnd() * colors.length);
-    const c = box(s, h, s, colors[ci]);
-    c.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v);
-    c.userData = { dir: v, s, h, ci };
-    planet.add(c);
-    deco.push(c);
+    const s = 0.7 + rnd() * 0.9;
+    if (Math.abs(v.x) * th.R < TRACK_HALF + 0.9 + s * 0.9) continue;      // keep the road clear
+    if (terrainH(v, th.R) <= WATER_H + 0.1) continue;                       // not in the water
+    let r = rnd() * total, name = names[0];
+    for (const n of names) { if ((r -= th.props[n]) < 0) { name = n; break; } }
+    const inst = { dir: v.clone(), s, yaw: rnd() * Math.PI * 2, name };
+    perProp[name].push(inst);
+    propInstances.push(inst);
+  }
+  for (const name of names) {
+    const list = perProp[name];
+    if (!list.length) continue;
+    for (const part of PROPS[name]) {
+      const im = new THREE.InstancedMesh(G[part.g], flat(part.c, part.e || 0), list.length);
+      im.castShadow = !part.e; im.receiveShadow = true;
+      im.userData = { list, part };
+      planet.add(im);
+      propMeshes.push(im);
+    }
+  }
+}
+const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _p = new THREE.Vector3(),
+  _s = new THREE.Vector3(), _local = new THREE.Matrix4(), _e = new THREE.Euler(), UP = new THREE.Vector3(0, 1, 0);
+function layoutProps() {
+  const pr = R - 0.3, k = pr / (theme.R - 0.3);
+  for (const im of propMeshes) {
+    const { list, part } = im.userData;
+    list.forEach((inst, i) => {
+      // Prop frame: stand on the terrain, up = away from the planet centre.
+      _q.setFromUnitVectors(UP, inst.dir).multiply(_q2.setFromAxisAngle(UP, inst.yaw));
+      _p.copy(inst.dir).multiplyScalar(pr + (terrainH(inst.dir, theme.R) - 0.05) * k);
+      _m.compose(_p, _q, _s.set(inst.s, inst.s, inst.s));
+      _e.set(...(part.r || [0, 0, 0]));
+      _local.compose(new THREE.Vector3(...part.p), new THREE.Quaternion().setFromEuler(_e), new THREE.Vector3(...part.s));
+      _m.multiply(_local);
+      im.setMatrixAt(i, _m);
+    });
+    im.instanceMatrix.needsUpdate = true;
+    im.computeBoundingSphere();
+  }
+}
+
+// ---------------------------------------------------------------------
+// Sky: gradient, haze, sun, moon and drifting clouds.
+// ---------------------------------------------------------------------
+const skyCanvas = document.createElement('canvas');
+skyCanvas.width = 2; skyCanvas.height = 256;
+const skyTex = new THREE.CanvasTexture(skyCanvas);
+skyTex.colorSpace = THREE.SRGBColorSpace;
+scene.background = skyTex;
+scene.fog = new THREE.Fog(0xcfe8f7, 40, 150);
+function paintSky(top, bottom) {
+  const g = skyCanvas.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256);
+  const hex = (c) => '#' + c.toString(16).padStart(6, '0');
+  gr.addColorStop(0, hex(top)); gr.addColorStop(1, hex(bottom));
+  g.fillStyle = gr; g.fillRect(0, 0, 2, 256);
+  skyTex.needsUpdate = true;
+}
+const sunMesh = new THREE.Mesh(G.ico1, new THREE.MeshBasicMaterial({ color: 0xfff1a8, fog: false }));
+const moon = new THREE.Mesh(G.ico0, new THREE.MeshLambertMaterial({ color: 0xc9c9d6, flatShading: true, fog: false }));
+scene.add(sunMesh, moon);
+const cloudLayer = new THREE.Group();
+scene.add(cloudLayer);
+function buildClouds(th) {
+  cloudLayer.clear();
+  let seed = 99;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const m = new THREE.MeshLambertMaterial({ color: th.cloud, flatShading: true, transparent: true, opacity: 0.92 });
+  for (let i = 0; i < th.clouds; i++) {
+    const c = new THREE.Group();
+    const n = 2 + Math.floor(rnd() * 3);
+    for (let j = 0; j < n; j++) {
+      const puff = new THREE.Mesh(G.ico0, m);
+      const s = 1.2 + rnd() * 1.4;
+      puff.scale.set(s * 1.4, s * 0.8, s);
+      puff.position.set((j - n / 2) * 1.7, rnd() * 0.6, rnd() * 1.2);
+      c.add(puff);
+    }
+    c.userData = { phi: rnd() * Math.PI * 2, x: (rnd() * 2 - 1) * 28, alt: 16 + rnd() * 10 };
+    cloudLayer.add(c);
+  }
+}
+function updateSky(dt) {
+  const t = performance.now() / 1000;
+  sunMesh.position.set(-45, R + 42, -120);
+  sunMesh.scale.setScalar(7);
+  moon.position.set(Math.cos(t * 0.03) * 60, R + 24 + Math.sin(t * 0.03) * 8, -95);
+  moon.scale.setScalar(3.2);
+  moon.rotation.y = t * 0.1;
+  // Clouds circle the planet a little slower than the ground, so they drift past.
+  for (const c of cloudLayer.children) {
+    const { phi, x, alt } = c.userData;
+    const a = phi - angle * 0.85 - t * 0.01, r = R + alt;
+    c.position.set(x, r * Math.cos(a), -r * Math.sin(a));
+    c.quaternion.setFromAxisAngle(AX, -a);
   }
 }
 
 let theme = THEMES[0];
-const dashMat = mat(0xf2f2f2);
 function applyTheme(t) {
   theme = t;
-  scene.background.setHex(t.sky);
-  globe.material = mat(t.globe);
-  track.material = mat(t.track);
-  for (const d of dashes) d.material = mat(t.dash);
-  for (const c of deco) c.material = mat(t.deco[c.userData.ci % t.deco.length]);
+  paintSky(t.skyTop, t.skyBottom);
+  scene.fog.color.setHex(t.skyBottom);
+  globe.geometry.dispose();
+  globe.geometry = buildGlobe(t);
+  globe.material = t.glowWater ? glowGlobeMat : globeMat;
+  track.material = flat(t.track);
+  for (const c of curbs) c.material = flat(t.curb, t.name === 'EMBER' ? 0.8 : 0);
+  for (const d of dashes) d.material = flat(t.dash, t.name === 'EMBER' ? 0.6 : 0);
+  sunMesh.material.color.setHex(t.sun);
+  buildProps(t);
+  buildClouds(t);
 }
 
 function layoutWorld() {
   const pr = R - 0.3;
   globe.scale.setScalar(pr);
   track.scale.set(R, TRACK_HALF * 2, R);
+  for (const c of curbs) { c.scale.set(R + 0.12, 0.3, R + 0.12); c.position.x = c.userData.side * (TRACK_HALF + 0.1); }
   for (const d of dashes) place(d, d.userData.phi, d.userData.x, 0.01);
-  for (const c of deco) {
-    const { dir, s, h } = c.userData;
-    c.position.copy(dir).multiplyScalar(pr + h / 2 - 0.15);
-    c.visible = Math.abs(dir.x) * pr - s * 0.75 > TRACK_HALF + 0.3;   // keep the track clear
-  }
+  layoutProps();
   for (const it of items) placeItem(it);
 }
 
@@ -519,6 +735,21 @@ function addItem(kind, phi, x, opt = {}) {
   } else {
     const m = box(w, h, len, k.color);
     it.parts.push({ obj: m, dm: 0, y: y0 + h / 2, spin: kind === 'COIN' });
+    // Shape details: same colour code on every planet, but each type has a recognisable form.
+    const band = (yy, color, bh = 0.1) => it.parts.push({ obj: box(w + 0.05, bh, len + 0.05, color), dm: 0, y: yy });
+    if (kind === 'LOW') {            // crate: dark bands top and bottom, a cross plank
+      band(y0 + 0.07, 0xb8561a, 0.14); band(y0 + h - 0.07, 0xb8561a, 0.14);
+      it.parts.push({ obj: box(w * 0.18, h - 0.2, len + 0.06, 0xb8561a), dm: 0, y: y0 + h / 2 });
+    } else if (kind === 'HIGH') {    // a bar on two posts: clearly "go under"
+      for (const sx of [-1, 1]) it.parts.push({ obj: box(0.14, y0, 0.14, 0x8a3a8a), dm: 0, y: y0 / 2, dx: sx * (w / 2 - 0.07) });
+      band(y0 + 0.08, 0xffffff, 0.08);
+      band(y0 + 0.3, 0x9c2a96, 0.12);
+    } else if (kind === 'WALL') {    // stacked layers
+      for (let yy = 0.7; yy < h; yy += 0.7) band(yy, 0xa82020, 0.09);
+      it.parts.push({ obj: box(w * 0.92, 0.12, len * 0.92, 0xff5a5a), dm: 0, y: h + 0.06 });
+    } else if (kind === 'MOVER') {   // white chevrons on the sides
+      band(y0 + h * 0.5, 0xffffff, 0.14);
+    }
   }
   for (const p of it.parts) planet.add(p.obj);
   placeItem(it);
@@ -526,7 +757,7 @@ function addItem(kind, phi, x, opt = {}) {
   return it;
 }
 function placeItem(it) {
-  for (const p of it.parts) place(p.obj, it.phi + p.dm / R, it.x, p.y);
+  for (const p of it.parts) place(p.obj, it.phi + p.dm / R, it.x + (p.dx || 0), p.y);
 }
 function removeItem(it) {
   for (const p of it.parts) planet.remove(p.obj);
@@ -1040,6 +1271,7 @@ function render(dt) {
   camera.position.copy(camPos);
   camera.lookAt(camLook);
 
+  updateSky(dt);
   sun.position.set(8, R + 18, 8);
   sun.target.position.set(0, R, -4);
 
