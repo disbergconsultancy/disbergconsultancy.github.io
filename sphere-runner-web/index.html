@@ -12,15 +12,19 @@
   canvas { display: block; touch-action: none; }
   .hud { position: fixed; left: 0; right: 0; top: 0; display: flex; justify-content: space-between; pointer-events: none;
     padding: calc(env(safe-area-inset-top) + 12px) calc(env(safe-area-inset-right) + 16px) 0 calc(env(safe-area-inset-left) + 16px);
-    text-shadow: 0 2px 4px rgba(0,0,0,.5); }
+    text-shadow: 0 0 3px rgba(0,0,0,.7), 0 2px 4px rgba(0,0,0,.5); }
   #score { font-size: 40px; font-weight: 800; }
   #info { text-align: right; font-size: 15px; line-height: 1.4; font-weight: 600; }
-  #flash { position: fixed; left: 0; right: 0; top: 22%; text-align: center; font-size: 54px; font-weight: 900;
-    pointer-events: none; text-shadow: 0 3px 8px rgba(0,0,0,.5); opacity: 0; transition: opacity .2s; white-space: pre-line; line-height: 1.1; }
+  #flash { position: fixed; left: 0; right: 0; top: 22%; text-align: center; font-size: clamp(30px, 11vw, 54px); font-weight: 900; padding: 0 12px;
+    pointer-events: none; text-shadow: 0 0 4px rgba(0,0,0,.6), 0 3px 8px rgba(0,0,0,.5); opacity: 0; transition: opacity .2s; white-space: pre-line; line-height: 1.1; }
   #pop { position: fixed; left: 0; right: 0; top: 36%; text-align: center; font-size: 26px; font-weight: 900; color: #fff36b;
     pointer-events: none; text-shadow: 0 2px 6px rgba(0,0,0,.6); opacity: 0; transition: opacity .15s; }
   #powers { position: fixed; left: calc(env(safe-area-inset-left) + 16px); bottom: calc(env(safe-area-inset-bottom) + 18px);
     font-size: 16px; font-weight: 800; line-height: 1.5; pointer-events: none; text-shadow: 0 2px 4px rgba(0,0,0,.7); }
+  #fade { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+  #combo { position: fixed; left: calc(env(safe-area-inset-left) + 16px); top: calc(env(safe-area-inset-top) + 62px);
+    font-size: 17px; font-weight: 900; color: #ffe14d; pointer-events: none; text-shadow: 0 2px 4px rgba(0,0,0,.6); }
+  #combo .bar { height: 5px; background: #ffe14d; border-radius: 3px; margin-top: 3px; box-shadow: 0 1px 3px rgba(0,0,0,.5); }
   #pauseBtn { position: fixed; right: calc(env(safe-area-inset-right) + 14px); bottom: calc(env(safe-area-inset-bottom) + 14px);
     width: 44px; height: 44px; border-radius: 22px; border: 0; background: rgba(0,0,0,.3); color: #fff; font-size: 18px; font-weight: 800; }
   .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -51,6 +55,8 @@
 </head>
 <body>
 <div class="hud"><div id="score">0</div><div id="info"></div></div>
+<div id="fade"></div>
+<div id="combo"></div>
 <div id="flash"></div>
 <div id="pop"></div>
 <div id="powers"></div>
@@ -69,7 +75,9 @@
       <div class="sw" style="background:#5a6b8c"></div><div>Long block: take the ramp and run on top</div>
       <div class="sw" style="background:#ffd91a"></div><div>Coin · close call = bonus</div>
       <div class="sw" style="background:linear-gradient(90deg,#00e5ff 25%,#3dff6e 25% 50%,#fff 50% 75%,#ff4fa3 75%)"></div><div>Power-ups: magnet · shield · orbit · x2</div>
+      <div class="sw" style="background:#7df9ff"></div><div>Hop gate (every 2 laps): launch to a new planet</div>
     </div>
+    <p style="font-size:13px">Keep coins and close calls coming for a <b>combo</b>. Hold your finger after a jump to <b>float</b>. Switch lanes in the air for a quick <b>air dash</b>.</p>
     <div class="opt"><div>Shrinking globe<small>The world gets smaller every lap</small></div><input type="checkbox" id="optShrink"></div>
     <div class="opt"><div>Difficulty<small>Speed, obstacle density and mix</small></div><div class="seg" id="segDiff"><button data-v="easy">Easy</button><button data-v="medium">Medium</button><button data-v="hard">Hard</button></div></div>
     <div class="opt"><div>Sound</div><input type="checkbox" id="optSound"></div>
@@ -123,6 +131,18 @@ const DIFF = {
 };
 const P = () => DIFF[opts.diff] || DIFF.medium;
 const SHRINK_FACTOR = 0.85, MIN_R = 12, SHRINK_TIME = 1.5;
+// Planets you hop between. Each has its own size, so the curve and lap length change.
+const THEMES = [
+  { name: 'MEADOW',  R: 45, sky: 0x8cc0f2, globe: 0x59b366, track: 0x4a4a57, dash: 0xf2f2f2, deco: [0x3f8c4d, 0x73cc73, 0x99804f, 0xd9d9e6, 0x2f6e3a] },
+  { name: 'DUNES',   R: 36, sky: 0xf5c993, globe: 0xe3c27d, track: 0x8a6a4a, dash: 0xfff1d6, deco: [0xc99a55, 0x7d9c4a, 0xf0dfae, 0xb5763f, 0x9c7a4a] },
+  { name: 'GLACIER', R: 54, sky: 0xb4d4f0, globe: 0xe6f2fb, track: 0x5f7090, dash: 0xffffff, deco: [0xffffff, 0xa8d8f0, 0x6a8caa, 0xcfe6f5, 0x8fb5d0] },
+  { name: 'EMBER',   R: 30, sky: 0x3b2540, globe: 0x4a2f2f, track: 0x2a2a30, dash: 0xff8a3d, deco: [0x2a1a1a, 0xff6a2a, 0x6a3a2a, 0x8c2a1a, 0x3a2a2a] },
+];
+const HOP_TIME = 2.6, HOP_H = 14, HOP_EVERY_LAPS = 2;
+// Pacing: a wave of obstacles, then a calm stretch of coins.
+const WAVE_M = { easy: 220, medium: 260, hard: 300 }, CALM_M = 70;
+const COMBO_TIME = 2.5;           // seconds to keep the combo alive
+const FLOAT_TIME = 0.45, FLOAT_GRAVITY = 0.35;
 const HIT_PAUSE = 0.25;
 
 // =====================================================================
@@ -240,12 +260,24 @@ const deco = [];
     if (len < 0.1 || len > 1) continue;
     v.normalize();
     const s = 0.6 + rnd() * 1.8, h = s * (0.8 + rnd() * 1.7);
-    const c = box(s, h, s, colors[Math.floor(rnd() * colors.length)]);
+    const ci = Math.floor(rnd() * colors.length);
+    const c = box(s, h, s, colors[ci]);
     c.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v);
-    c.userData = { dir: v, s, h };
+    c.userData = { dir: v, s, h, ci };
     planet.add(c);
     deco.push(c);
   }
+}
+
+let theme = THEMES[0];
+const dashMat = mat(0xf2f2f2);
+function applyTheme(t) {
+  theme = t;
+  scene.background.setHex(t.sky);
+  globe.material = mat(t.globe);
+  track.material = mat(t.track);
+  for (const d of dashes) d.material = mat(t.dash);
+  for (const c of deco) c.material = mat(t.deco[c.userData.ci % t.deco.length]);
 }
 
 function layoutWorld() {
@@ -284,6 +316,7 @@ const KIND = {
   RAMP:     { h: 1.6, y0: 0,   d: 5,   color: 0x8899bb },
   COIN:     { h: 0.45, y0: 0,  d: 0.45, color: 0xffd91a },
   POWER:    { h: 0.7, y0: 0.5, d: 0.7, color: 0xffffff },
+  GATE:     { h: 5, y0: 0, d: 1.2, color: 0x7df9ff },
 };
 const HAZARDS = new Set(['LOW', 'HIGH', 'WALL', 'MOVER', 'PIT', 'PLATFORM']);
 const POWERS = {
@@ -330,6 +363,14 @@ function addItem(kind, phi, x, opt = {}) {
     const m = new THREE.Mesh(boxGeo, glow(k.color));
     m.scale.set(w, h, len);
     it.parts.push({ obj: m, dm: 0, y: 0.03 });
+  } else if (kind === 'GATE') {
+    // Glowing floor pad with an arch over the track.
+    const g = new THREE.Group();
+    const floor = new THREE.Mesh(boxGeo, glow(0x7df9ff)); floor.scale.set(w, 0.08, len * 3); floor.position.y = -h / 2 + 0.04; g.add(floor);
+    for (const sx of [-1, 1]) { const post = new THREE.Mesh(boxGeo, glow(0x7df9ff)); post.scale.set(0.4, h, 0.4); post.position.x = sx * (w / 2 + 0.2); g.add(post); }
+    const top = new THREE.Mesh(boxGeo, glow(0xffffff)); top.scale.set(w + 0.8, 0.5, 0.4); top.position.y = h / 2; g.add(top);
+    for (let i = 0; i < 3; i++) { const ch = new THREE.Mesh(boxGeo, glow(0xffffff)); ch.scale.set(1.6, 0.1, 0.35); ch.position.set(0, -h / 2 + 0.1, 1.2 - i * 1.2); g.add(ch); }
+    it.parts.push({ obj: g, dm: 0, y: h / 2 });
   } else if (kind === 'POWER') {
     const m = new THREE.Mesh(boxGeo, glow(POWERS[opt.extra.power].color));
     m.scale.set(w, h, len);
@@ -448,6 +489,17 @@ const CHUNKS = {
     coinArc(phi, c, 0); coinLine(phi, c, gap - 1.5, gap + 1.5, 0.1, 1.5);
     return gap;
   },
+  // Calm stretch: a snake of coins, no hazards, usually a power-up at the end.
+  calm(phi) {
+    let l = pick([-1, 0, 1]);
+    for (let m = 0; m < CALM_M - 10; m += 1.8) {
+      if (Math.random() < 0.12) l = THREE.MathUtils.clamp(l + pick([-1, 1]), -1, 1);
+      const y = (Math.floor(m / 18) % 2) ? 1.2 + Math.sin(m * 0.5) * 0.6 : 0.4;
+      addItem('COIN', phi + m / R, LX(l), { y0: y });
+    }
+    if (Math.random() < 0.6) { addItem('POWER', phi + (CALM_M - 5) / R, LX(pick([-1, 0, 1])), { extra: { power: pick(Object.keys(POWERS)) } }); powerIn = 160 + Math.random() * 100; }
+    return CALM_M;
+  },
   // A block that slides between lanes.
   mover(phi) {
     const it = addItem('MOVER', phi, 0, { extra: { moveAmp: LANE_W, moveSpeed: 1.6 + Math.random(), movePhase: Math.random() * 6.28 } });
@@ -464,9 +516,12 @@ const CHUNK_WEIGHTS = {
 function pickChunk() {
   const w = CHUNK_WEIGHTS[opts.diff] || CHUNK_WEIGHTS.medium;
   // Start every run with a few simple rows.
-  if (dist < 60 && spawnedChunks < 3) return 'row';
-  let r = Math.random() * Object.values(w).reduce((a, b) => a + b, 0);
-  for (const [k, v] of Object.entries(w)) { if ((r -= v) < 0) return k; }
+  if (spawnedChunks < 3) return 'row';
+  // Later in a wave, fewer plain rows and more patterns.
+  const intensity = 1 - waveLeft / (WAVE_M[opts.diff] || 260);
+  const ww = { ...w, row: w.row * (1 - 0.5 * intensity) };
+  let r = Math.random() * Object.values(ww).reduce((a, b) => a + b, 0);
+  for (const [k, v] of Object.entries(ww)) { if ((r -= v) < 0) return k; }
   return 'row';
 }
 
@@ -474,10 +529,22 @@ function updateSpawning() {
   const ahead = Math.min(SPAWN_AHEAD_M / R, Math.PI * 0.9);
   const p = P();
   while (nextSpawn < angle + ahead) {
-    const name = pickChunk();
+    // Hop gate at the start of every second lap.
+    const padPhi = nextPadLap * Math.PI * 2;
+    if (nextSpawn > padPhi - 45 / R) {
+      addItem('GATE', padPhi, 0, { w: TRACK_HALF * 2, len: 1.2 });
+      nextSpawn = padPhi + 20 / R;
+      nextPadLap += HOP_EVERY_LAPS;
+      continue;
+    }
+    let name;
+    if (calmLeft > 0) { name = 'calm'; calmLeft = 0; waveLeft = WAVE_M[opts.diff] || 260; }
+    else name = pickChunk();
     const len = CHUNKS[name](nextSpawn);
     spawnedChunks++;
-    const gap = Math.max(p.minGap, speed * p.gap);
+    const intensity = 1 - waveLeft / (WAVE_M[opts.diff] || 260);
+    const gap = name === 'calm' ? 8 : Math.max(p.minGap, speed * p.gap * (1 - 0.2 * intensity));
+    if (name !== 'calm') { waveLeft -= len + gap; if (waveLeft <= 0) calmLeft = 1; }
     // Power-ups float in the empty gap between patterns.
     powerIn -= len + gap;
     if (powerIn <= 0 && state === 'run') {
@@ -501,12 +568,17 @@ let angle = 0, speed = 12, dist = 0, nextSpawn = 0, spawnedChunks = 0, powerIn =
 let lane = 0, px = 0, py = 0, vy = 0, slideT = 0, jumpBufferT = 0, grounded = true, groundY = 0;
 let coins = 0, lap = 0, hitT = 0, shake = 0, squash = 0, pts = 0, closeCalls = 0;
 let flashT = 0, popT = 0;
+let combo = 0, comboT = 0, comboLevel = 1, floatT = 0, holding = false, dashT = 0;
+let waveLeft = 0, calmLeft = 0, nextPadLap = HOP_EVERY_LAPS, hopT = 0, hopSwapped = false, themeIdx = 0;
 const pw = { magnet: 0, shield: 0, orbit: 0, x2: 0, invuln: 0 };
 
 function reset() {
   for (const it of items) removeItem(it);
   items = [];
-  R = targetR = shrinkFrom = opts.size; shrinkT = 1;
+  themeIdx = 0; applyTheme(THEMES[0]);
+  R = targetR = shrinkFrom = THEMES[0].R; shrinkT = 1;
+  combo = 0; comboT = 0; comboLevel = 1; floatT = 0; dashT = 0;
+  waveLeft = WAVE_M[opts.diff] || 260; calmLeft = 0; nextPadLap = HOP_EVERY_LAPS; hopT = 0;
   angle = 0; speed = P().start; dist = 0; spawnedChunks = 0; powerIn = 90;
   lane = 0; px = 0; py = 0; vy = 0; slideT = 0; jumpBufferT = 0; grounded = true; groundY = 0;
   coins = 0; lap = 0; shake = 0; squash = 0; pts = 0; closeCalls = 0;
@@ -520,6 +592,12 @@ function reset() {
 }
 
 const mult = () => (pw.x2 > 0 ? 2 : 1);
+const comboMult = () => 1 + Math.min(4, Math.floor(combo / 10));
+function addCombo(n) {
+  combo += n; comboT = COMBO_TIME;
+  const lv = comboMult();
+  if (lv > comboLevel) { comboLevel = lv; pop('COMBO x' + lv); sfx.combo(); }
+}
 const score = () => Math.floor(pts);
 
 function crash(it) {
@@ -576,7 +654,8 @@ function step(dt) {
   if (newLap > lap) {
     lap = newLap;
     speed = Math.min(P().max, speed + LAP_BONUS);
-    if (opts.shrink && R > MIN_R + 0.01) {
+    if (hopT > 0) { /* the hop shows its own message */ }
+    else if (opts.shrink && R > MIN_R + 0.01) {
       shrinkFrom = R; targetR = Math.max(MIN_R, R * SHRINK_FACTOR); shrinkT = 0;
       flash(`LAP ${lap + 1}\nSHRINK`);
     } else flash(`LAP ${lap + 1}`);
@@ -588,6 +667,10 @@ function step(dt) {
     R = shrinkFrom + (targetR - shrinkFrom) * t;
     layoutWorld();
   }
+
+  if (comboT > 0) { comboT -= dt; if (comboT <= 0) { combo = 0; comboLevel = 1; } }
+  if (dashT > 0) dashT -= dt;
+  if (hopT > 0) updateHop(dt);
 
   // Power-up timers
   for (const k of ['magnet', 'orbit', 'x2', 'invuln']) if (pw[k] > 0) pw[k] = Math.max(0, pw[k] - dt);
@@ -627,7 +710,8 @@ function surfaceUnderPlayer() {
 }
 
 function movePlayer(dt) {
-  px = moveToward(px, lane * LANE_W, LANE_SPEED * dt);
+  px = moveToward(px, lane * LANE_W, LANE_SPEED * (dashT > 0 ? 2 : 1) * dt);
+  if (hopT > 0) return;
   if (pw.orbit > 0) {
     // Float high above the globe.
     py += (ORBIT_H - py) * Math.min(1, dt * 3);
@@ -638,7 +722,10 @@ function movePlayer(dt) {
   if (grounded && py < groundY) py = groundY;           // walking up a ramp
   if (py > groundY + 0.001 || vy > 0) {
     grounded = false;
-    vy -= GRAVITY * dt;
+    // Holding the finger down after a jump floats a little near the top.
+    let g = GRAVITY;
+    if (holding && vy < 3 && floatT < FLOAT_TIME && slideT <= 0) { g *= FLOAT_GRAVITY; floatT += dt; }
+    vy -= g * dt;
     py += vy * dt;
     if (py <= groundY) {
       const hard = vy < -12;
@@ -671,6 +758,7 @@ function collide(dt) {
 
     const overlapZ = Math.abs(d) <= it.hd + hd;
     const overlapX = Math.abs(it.x - px) <= it.hw + hw;
+    if (it.kind === 'GATE') { if (overlapZ && hopT <= 0) { it.alive = false; startHop(); } continue; }
 
     // Close-call tracking for hazards the player is passing.
     if (HAZARDS.has(it.kind) && !it.passed && it.kind !== 'PLATFORM') {
@@ -681,7 +769,7 @@ function collide(dt) {
       } else if (d < -(it.hd + hd)) {
         it.passed = true;
         if (it.minClear < NEAR_MISS && it.minClear > -0.3 && pw.orbit <= 0) {
-          closeCalls++; pts += 25 * mult(); pop('CLOSE! +' + 25 * mult()); sfx.close();
+          closeCalls++; const b = 25 * mult() * comboMult(); pts += b; addCombo(3); pop('CLOSE! +' + b); sfx.close();
         }
       }
     }
@@ -694,7 +782,7 @@ function collide(dt) {
     }
     if (py + ph - HIT_SHRINK <= it.y0 || py + HIT_SHRINK >= it.y1) continue;
     if (it.kind === 'COIN') {
-      hideItem(it); coins++; pts += 10 * mult(); sfx.coin();
+      hideItem(it); coins++; pts += 10 * mult() * comboMult(); addCombo(1); sfx.coin();
     } else if (it.kind === 'POWER') {
       hideItem(it); activate(it.power);
     } else if (pw.orbit <= 0) {
@@ -704,6 +792,34 @@ function collide(dt) {
 }
 
 let skyCoinIn = 0, skyWave = 0;
+function startHop() {
+  hopT = HOP_TIME; hopSwapped = false; hopBase = py;
+  pw.orbit = 0; slideT = 0; vy = 0;
+  pw.invuln = HOP_TIME + 1.2;
+  flash('PLANET HOP!'); sfx.hop();
+}
+function updateHop(dt) {
+  hopT = Math.max(0, hopT - dt);
+  const u = 1 - hopT / HOP_TIME;
+  py = Math.sin(Math.PI * u) * HOP_H + (1 - u) * hopBase;
+  grounded = false;
+  $('fade').style.opacity = Math.max(0, 1 - Math.abs(u - 0.5) * 5);
+  if (!hopSwapped && u >= 0.5) {
+    hopSwapped = true;
+    for (const it of items) removeItem(it);
+    items = [];
+    themeIdx = (themeIdx + 1) % THEMES.length;
+    applyTheme(THEMES[themeIdx]);
+    R = targetR = shrinkFrom = THEMES[themeIdx].R; shrinkT = 1;
+    layoutWorld();
+    nextSpawn = angle + 30 / R;
+    spawnedChunks = 0;
+    waveLeft = WAVE_M[opts.diff] || 260; calmLeft = 0;
+    flash(THEMES[themeIdx].name);
+  }
+  if (hopT <= 0) { $('fade').style.opacity = 0; py = Math.max(py, 0); vy = -5; }
+}
+let hopBase = 0;
 function activate(kind) {
   sfx.power();
   flash(POWERS[kind].label);
@@ -713,13 +829,19 @@ function activate(kind) {
 }
 
 function jump() {
-  slideT = 0; vy = JUMP_V; jumpBufferT = 0; grounded = false; squash = -1; sfx.jump();
+  slideT = 0; vy = JUMP_V; jumpBufferT = 0; grounded = false; squash = -1; floatT = 0; sfx.jump();
 }
 
 function action(dir) {
   if (state !== 'run') return;
-  if (dir === 'left') { if (lane > -1) { lane--; sfx.swish(); } }
-  else if (dir === 'right') { if (lane < 1) { lane++; sfx.swish(); } }
+  if (hopT > 0) return;
+  if (dir === 'left' || dir === 'right') {
+    const nl = THREE.MathUtils.clamp(lane + (dir === 'left' ? -1 : 1), -1, 1);
+    if (nl !== lane) {
+      lane = nl;
+      if (!grounded && pw.orbit <= 0) { dashT = 0.18; sfx.dash(); } else sfx.swish();
+    }
+  }
   else if (dir === 'up') {
     if (pw.orbit > 0) return;
     if (grounded) jump();
@@ -748,7 +870,8 @@ function render(dt) {
   player.scale.set(PLAYER.w / Math.sqrt(sq), h * sq, PLAYER.d / Math.sqrt(sq));
   player.position.set(px, R + py + (h * sq) / 2, 0);
   player.rotation.z = (px - lane * LANE_W) * 0.15;
-  player.rotation.x = pw.orbit > 0 ? Math.sin(performance.now() / 150) * 0.15 : 0;
+  player.rotation.x = pw.orbit > 0 ? Math.sin(performance.now() / 150) * 0.15 : hopT > 0 ? (1 - hopT / HOP_TIME) * Math.PI * 2 : 0;
+  player.rotation.y = dashT > 0 ? (lane * LANE_W - px) * 0.3 : 0;
   // Blink while invulnerable after a shield hit or orbit.
   player.visible = !(pw.invuln > 0 && pw.invuln < 1.4 && Math.floor(performance.now() / 80) % 2 === 0);
 
@@ -765,7 +888,7 @@ function render(dt) {
 
   // Camera rises with the player (big view of the globe in orbit).
   camX += (px * 0.6 - camX) * Math.min(1, dt * 8);
-  camY += ((pw.orbit > 0 ? py * 1.1 : py * 0.6) - camY) * Math.min(1, dt * 3);
+  camY += ((pw.orbit > 0 || hopT > 0 ? py * 1.1 : py * 0.6) - camY) * Math.min(1, dt * 3);
   let sx = 0, sy = 0;
   if (shake > 0) { shake = Math.max(0, shake - dt); sx = (Math.random() - 0.5) * shake; sy = (Math.random() - 0.5) * shake; }
   camPos.set(camX + sx, R + 4 + camY + sy, 6 + camY * 0.9);
@@ -786,11 +909,12 @@ let fps = 60;
 function updateHud() {
   $('score').innerHTML = score() + (mult() > 1 ? ' <span style="color:#ff4fa3;font-size:24px">x2</span>' : '');
   $('info').innerHTML = `Coins ${coins}<br>Lap ${lap + 1}<br>${Math.round(speed * 3.6)} km/h` +
-    `${opts.shrink ? `<br>Globe ${Math.round(R)} m` : ''}<br><span style="opacity:.6">${Math.round(fps)} fps</span>`;
+    `<br>${theme.name.charAt(0) + theme.name.slice(1).toLowerCase()} ${Math.round(R)} m<br><span style="opacity:.6">${Math.round(fps)} fps</span>`;
   const list = [];
   for (const k of ['magnet', 'orbit', 'x2']) if (pw[k] > 0) list.push(`<span style="color:#${POWERS[k].color.toString(16).padStart(6, '0')}">${POWERS[k].label} ${Math.ceil(pw[k])}</span>`);
   if (pw.shield > 0) list.push(`<span style="color:#3dff6e">SHIELD</span>`);
   $('powers').innerHTML = list.join('<br>');
+  $('combo').innerHTML = combo >= 3 ? `COMBO x${comboMult()} <span style="opacity:.7;font-size:13px">${combo}</span><div class="bar" style="width:${Math.round(110 * comboT / COMBO_TIME)}px"></div>` : '';
 }
 
 let last = performance.now();
@@ -809,7 +933,7 @@ function frame(now) {
 const SWIPE_MIN = 28;
 let down = null;
 const cvs = renderer.domElement;
-cvs.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, used: false }; });
+cvs.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, used: false }; holding = true; });
 cvs.addEventListener('pointermove', e => {
   if (!down || down.used) return;
   const dx = e.clientX - down.x, dy = e.clientY - down.y;
@@ -818,15 +942,16 @@ cvs.addEventListener('pointermove', e => {
   if (Math.abs(dx) > Math.abs(dy)) action(dx > 0 ? 'right' : 'left');
   else action(dy > 0 ? 'down' : 'up');
 });
-const endPointer = () => { down = null; };
+const endPointer = () => { down = null; holding = false; };
 cvs.addEventListener('pointerup', endPointer);
 cvs.addEventListener('pointercancel', endPointer);
 document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
 
+window.addEventListener('keyup', e => { if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) holding = false; });
 window.addEventListener('keydown', e => {
   const map = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
     ArrowUp: 'up', KeyW: 'up', Space: 'up', ArrowDown: 'down', KeyS: 'down' };
-  if (map[e.code]) { e.preventDefault(); action(map[e.code]); }
+  if (map[e.code]) { e.preventDefault(); if (e.repeat) return; if (map[e.code] === 'up') holding = true; action(map[e.code]); }
   if ((e.code === 'Enter' || e.code === 'Space') && state === 'over') startRun();
   if (e.code === 'Escape' || e.code === 'KeyP') togglePause();
 });
@@ -856,6 +981,9 @@ const sfx = {
   close: () => beep(1200, 1800, 0.07, 'triangle', 0.06),
   power: () => { beep(440, 880, 0.12); setTimeout(() => beep(660, 1320, 0.15), 90); },
   shield: () => beep(900, 200, 0.25, 'triangle', 0.1),
+  combo: () => { beep(660, 660, 0.06); setTimeout(() => beep(990, 990, 0.1), 60); },
+  dash: () => beep(700, 1400, 0.08, 'sawtooth', 0.04),
+  hop: () => { beep(200, 1200, 0.6, 'triangle', 0.1); setTimeout(() => beep(400, 1600, 0.5, 'sine', 0.08), 200); },
 };
 function initAudio() {
   try {
@@ -921,7 +1049,7 @@ reset();
 idle();
 requestAnimationFrame(frame);
 window.__game = { get state() { return state; }, get score() { return score(); }, action, startRun,
-  get items() { return items.length; }, get py() { return py; }, get pw() { return pw; }, get kinds() { return items.map(i => i.kind); }, get near() { return items.filter(i => i.alive).map(i => ({ k: i.kind, x: i.x, d: aheadM(i), hd: i.hd })); }, get grounded() { return grounded; }, activate, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
+  get items() { return items.length; }, get py() { return py; }, get pw() { return pw; }, get kinds() { return items.map(i => i.kind); }, get near() { return items.filter(i => i.alive).map(i => ({ k: i.kind, x: i.x, d: aheadM(i), hd: i.hd })); }, get grounded() { return grounded; }, get combo() { return combo; }, get theme() { return theme.name; }, get hopT() { return hopT; }, startHop, activate, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
 </script>
 <script>
 window.addEventListener('error', e => { const el = document.getElementById('err'); el.style.display = 'block'; el.textContent = 'Error: ' + e.message; });
