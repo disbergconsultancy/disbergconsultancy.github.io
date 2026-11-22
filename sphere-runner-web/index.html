@@ -58,14 +58,12 @@
       <div class="sw" style="background:#ff8c26"></div><div>Low block: jump</div>
       <div class="sw" style="background:#d940cc"></div><div>Floating bar: slide under</div>
       <div class="sw" style="background:#d93333"></div><div>Wall: switch lane</div>
-      <div class="sw" style="background:#4de6ff"></div><div>Echo: your own trail from earlier laps (jump)</div>
       <div class="sw" style="background:#ffd91a"></div><div>Coin</div>
     </div>
-    <div class="opt"><div>Echo trail<small>You leave blocks behind; you meet them on the next two laps</small></div><input type="checkbox" id="optEcho"></div>
     <div class="opt"><div>Shrinking globe<small>The world gets smaller every lap</small></div><input type="checkbox" id="optShrink"></div>
     <div class="opt"><div>Horizon markers<small>Poles that show obstacles before they come over the horizon</small></div><input type="checkbox" id="optMarkers"></div>
     <div class="opt"><div>Globe size</div><div class="seg" id="segSize"><button data-v="18">S</button><button data-v="30">M</button><button data-v="45">L</button></div></div>
-    <div class="opt"><div>Start speed</div><div class="seg" id="segSpeed"><button data-v="9">Slow</button><button data-v="12">Normal</button><button data-v="16">Fast</button></div></div>
+    <div class="opt"><div>Difficulty<small>Speed, obstacle density and mix</small></div><div class="seg" id="segDiff"><button data-v="easy">Easy</button><button data-v="medium">Medium</button><button data-v="hard">Hard</button></div></div>
     <div class="opt"><div>Sound</div><input type="checkbox" id="optSound"></div>
     <button class="go" id="playBtn">Play</button>
     <p id="bestLine" style="text-align:center;margin-top:10px"></p>
@@ -103,12 +101,18 @@ const SLIDE_H = 0.6, SLIDE_TIME = 0.7;
 const GRAVITY = 45, JUMP_V = 14, SLAM_V = -26;
 const LANE_SPEED = 17;            // m/s sideways
 const HIT_SHRINK = 0.12;          // collision forgiveness
-const MAX_SPEED = 30, ACCEL = 0.28, LAP_BONUS = 1.5;
+const LAP_BONUS = 1.5;
 const SPAWN_AHEAD_M = 38, DESPAWN_BEHIND_M = 8;
-const MIN_ROW_GAP = 9;
 const JUMP_BUFFER = 0.15;         // a jump swiped just before landing still counts
-const ECHO_EVERY = 14;            // metres between echo blocks
-const ECHO_LAPS = 2;              // how many laps an echo survives
+// Difficulty profiles. start/max: m/s, accel: m/s gained per second, gap: seconds between rows
+// (at current speed), minGap: metres. empty: chance a lane is free (drops by emptyRamp as speed rises),
+// low/high: chance of a jump block / slide bar; the rest are walls. maxBlocked: obstacles per row.
+const DIFF = {
+  easy:   { start: 9,    max: 20, accel: 0.15, gap: 1.4,  minGap: 14, empty: 0.62, emptyRamp: 0.10, low: 0.18, high: 0.12, maxBlocked: 1 },
+  medium: { start: 10.5, max: 25, accel: 0.20, gap: 1.1,  minGap: 11, empty: 0.52, emptyRamp: 0.15, low: 0.20, high: 0.15, maxBlocked: 2 },
+  hard:   { start: 12,   max: 30, accel: 0.28, gap: 0.85, minGap: 9,  empty: 0.45, emptyRamp: 0.20, low: 0.20, high: 0.18, maxBlocked: 3 },
+};
+const P = () => DIFF[opts.diff] || DIFF.medium;
 const SHRINK_FACTOR = 0.85, MIN_R = 12, SHRINK_TIME = 1.5;
 const HIT_PAUSE = 0.25;
 
@@ -120,10 +124,10 @@ const store = {
   set(k, v) { try { localStorage.setItem('sr_' + k, JSON.stringify(v)); } catch {} },
 };
 const opts = {
-  echo: store.get('echo', false), shrink: store.get('shrink', false), markers: store.get('markers', true),
-  size: store.get('size', 30), speed: store.get('speed', 12), sound: store.get('sound', true),
+  shrink: store.get('shrink', false), markers: store.get('markers', true),
+  size: store.get('size', 30), diff: store.get('diff', 'medium'), sound: store.get('sound', true),
 };
-const modeKey = () => `${opts.echo ? 'E' : ''}${opts.shrink ? 'S' : ''}${opts.size}`;
+const modeKey = () => `${opts.diff}_${opts.shrink ? 'S' : ''}${opts.size}`;
 
 // =====================================================================
 // Renderer, scene, camera
@@ -256,13 +260,12 @@ scene.add(player);
 const playerMat = mat(0x3380ff), deadMat = mat(0xff2626);
 
 // =====================================================================
-// Obstacles, coins, echoes
+// Obstacles and coins
 // =====================================================================
 const KIND = {
   LOW:  { h: 1.0, y0: 0, d: 0.8, color: 0xff8c26 },
   HIGH: { h: 2.2, y0: 1.0, d: 0.8, color: 0xd940cc },
   WALL: { h: 3.5, y0: 0, d: 1.5, color: 0xd93333 },
-  ECHO: { h: 0.9, y0: 0, d: 0.8, color: 0x4de6ff },
   COIN: { h: 0.45, y0: 0, d: 0.45, color: 0xffd91a },
 };
 let items = [];
@@ -271,10 +274,10 @@ function addItem(kindName, phi, x, y0 = null, extra = {}) {
   const k = KIND[kindName];
   const w = kindName === 'COIN' ? 0.45 : LANE_W * 0.85;
   const yb = y0 === null ? k.y0 : y0;
-  const mesh = box(w, k.h, k.d, k.color, kindName === 'ECHO' ? 0.75 : 1);
+  const mesh = box(w, k.h, k.d, k.color, 1);
   planet.add(mesh);
   const it = { kind: kindName, phi, x, y0: yb, y1: yb + k.h, hw: w / 2, hd: k.d / 2, mesh, alive: true, marker: null, ...extra };
-  if (opts.markers && kindName !== 'COIN' && kindName !== 'ECHO') {
+  if (opts.markers && kindName !== 'COIN') {
     const m = new THREE.Mesh(boxGeo, mat(k.color, 0.55));
     m.scale.set(0.12, 9, 0.12);
     planet.add(m);
@@ -296,21 +299,22 @@ function removeItem(it) {
 function wrapPi(a) { a = (a + Math.PI) % (Math.PI * 2); if (a < 0) a += Math.PI * 2; return a - Math.PI; }
 const aheadM = (it) => wrapPi(it.phi - angle) * R;
 
-function echoNear(phi, laneX, metres) {
-  return items.some(it => it.kind === 'ECHO' && it.x === laneX && Math.abs(wrapPi(it.phi - phi)) * R < metres);
-}
-
 function spawnRow(phi) {
-  const difficulty = THREE.MathUtils.clamp((speed - opts.speed) / (MAX_SPEED - opts.speed), 0, 1);
+  const p = P();
+  const difficulty = THREE.MathUtils.clamp((speed - p.start) / (p.max - p.start), 0, 1);
   const row = [];
   for (let i = 0; i < 3; i++) {
-    const r = Math.random(), e = 0.45 - 0.2 * difficulty;
-    row.push(r < e ? 'EMPTY' : r < e + 0.2 ? 'LOW' : r < e + 0.38 ? 'HIGH' : 'WALL');
+    const r = Math.random(), e = p.empty - p.emptyRamp * difficulty;
+    row.push(r < e ? 'EMPTY' : r < e + p.low ? 'LOW' : r < e + p.low + p.high ? 'HIGH' : 'WALL');
   }
-  // Lanes where your own echo sits stay clear, so the combination is always possible.
-  for (let i = 0; i < 3; i++) if (echoNear(phi, (i - 1) * LANE_W, 4)) row[i] = 'EMPTY';
+  // Cap obstacles per row for the chosen difficulty.
+  let blocked = [0, 1, 2].filter(i => row[i] !== 'EMPTY');
+  while (blocked.length > p.maxBlocked) {
+    const j = blocked.splice(Math.floor(Math.random() * blocked.length), 1)[0];
+    row[j] = 'EMPTY';
+  }
   if (!row.some(k => k !== 'WALL')) row[Math.floor(Math.random() * 3)] = 'EMPTY';
-  if (row.every(k => k === 'EMPTY') && Math.random() < 0.7 && !opts.echo) row[Math.floor(Math.random() * 3)] = Math.random() < 0.5 ? 'LOW' : 'HIGH';
+  if (row.every(k => k === 'EMPTY') && Math.random() < 0.7) row[Math.floor(Math.random() * 3)] = Math.random() < 0.5 ? 'LOW' : 'HIGH';
 
   row.forEach((k, i) => { if (k !== 'EMPTY') addItem(k, phi, (i - 1) * LANE_W); });
 
@@ -329,34 +333,23 @@ function spawnRow(phi) {
 
 function updateSpawning() {
   const ahead = Math.min(SPAWN_AHEAD_M / R, Math.PI * 0.9);
-  const gapMul = opts.echo ? 1.7 : 1;
+  const p = P();
   while (nextSpawn < angle + ahead) {
     spawnRow(nextSpawn);
-    nextSpawn += Math.max(MIN_ROW_GAP, speed * 0.85) * gapMul / R;
+    nextSpawn += Math.max(p.minGap, speed * p.gap) / R;
   }
   items = items.filter(it => {
-    let gone;
-    if (it.kind === 'ECHO') gone = angle - it.born > ECHO_LAPS * Math.PI * 2 + DESPAWN_BEHIND_M / R;
-    else gone = (it.phi - angle) * R < -DESPAWN_BEHIND_M;
+    const gone = (it.phi - angle) * R < -DESPAWN_BEHIND_M;
     if (gone) removeItem(it);
     return !gone;
   });
-}
-
-function dropEcho() {
-  const laneX = lane * LANE_W;
-  // Don't drop on top of something you just jumped over or slid under.
-  const phi = angle - 2.5 / R;
-  const blocked = items.some(it => it.kind !== 'COIN' && it.x === laneX && Math.abs(wrapPi(it.phi - phi)) * R < 3);
-  if (blocked) return;
-  addItem('ECHO', phi, laneX, null, { born: angle });
 }
 
 // =====================================================================
 // Game state
 // =====================================================================
 let state = 'menu';       // menu | run | hit | over | paused
-let angle = 0, speed = 12, dist = 0, nextEcho = 0, nextSpawn = 0;
+let angle = 0, speed = 12, dist = 0, nextSpawn = 0;
 let lane = 0, px = 0, py = 0, vy = 0, slideT = 0, jumpBufferT = 0;
 let coins = 0, lap = 0, hitT = 0, shake = 0, squash = 0;
 let flashT = 0;
@@ -365,7 +358,7 @@ function reset() {
   for (const it of items) removeItem(it);
   items = [];
   R = targetR = shrinkFrom = opts.size; shrinkT = 1;
-  angle = 0; speed = opts.speed; dist = 0; nextEcho = ECHO_EVERY;
+  angle = 0; speed = P().start; dist = 0;
   lane = 0; px = 0; py = 0; vy = 0; slideT = 0; jumpBufferT = 0;
   coins = 0; lap = 0; shake = 0; squash = 0;
   nextSpawn = 25 / R;
@@ -413,7 +406,7 @@ function step(dt) {
   }
   if (state !== 'run') return;
 
-  speed = Math.min(MAX_SPEED, speed + ACCEL * dt);
+  speed = Math.min(P().max, speed + P().accel * dt);
   angle += (speed / R) * dt;
   dist += speed * dt;
   planet.rotation.x = angle % (Math.PI * 2);
@@ -421,7 +414,7 @@ function step(dt) {
   const newLap = Math.floor(angle / (Math.PI * 2));
   if (newLap > lap) {
     lap = newLap;
-    speed = Math.min(MAX_SPEED, speed + LAP_BONUS);
+    speed = Math.min(P().max, speed + LAP_BONUS);
     if (opts.shrink && R > MIN_R + 0.01) {
       shrinkFrom = R; targetR = Math.max(MIN_R, R * SHRINK_FACTOR); shrinkT = 0;
       flash(`LAP ${lap + 1}\nSHRINK`);
@@ -449,7 +442,6 @@ function step(dt) {
   if (jumpBufferT > 0) jumpBufferT -= dt;
   if (slideT > 0 && py <= 0) slideT -= dt;
 
-  if (opts.echo && dist >= nextEcho) { dropEcho(); nextEcho += ECHO_EVERY; }
 
   updateSpawning();
   collide();
@@ -463,7 +455,6 @@ function collide() {
   const hw = PLAYER.w / 2 - HIT_SHRINK, hd = PLAYER.d / 2 - HIT_SHRINK;
   for (const it of items) {
     if (!it.alive) continue;
-    if (it.kind === 'ECHO' && angle - it.born < 1.0) continue;   // not armed until you've moved away
     const d = aheadM(it);
     if (Math.abs(d) > it.hd + hd) continue;
     if (Math.abs(it.x - px) > it.hw + hw) continue;
@@ -506,7 +497,7 @@ function render(dt) {
   player.position.set(px, R + py + (h * sq) / 2, 0);
   player.rotation.z = (px - lane * LANE_W) * 0.15;
 
-  // Spinning coins and fading echoes
+  // Spinning coins, markers only while far away
   for (const it of items) {
     if (it.kind === 'COIN') it.mesh.rotateY(dt * 4);
     if (it.marker) it.marker.visible = aheadM(it) > 12;
@@ -619,10 +610,10 @@ function bindCheck(id, key) {
 }
 function bindSeg(id, key) {
   const seg = $(id);
-  const paint = () => seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', +b.dataset.v === opts[key]));
+  const paint = () => seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', String(b.dataset.v) === String(opts[key])));
   seg.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    opts[key] = +b.dataset.v; store.set(key, opts[key]); paint(); refreshMenu();
+    opts[key] = isNaN(+b.dataset.v) ? b.dataset.v : +b.dataset.v; store.set(key, opts[key]); paint(); refreshMenu();
   });
   paint();
 }
@@ -630,12 +621,11 @@ function refreshMenu() {
   $('bestLine').textContent = `Best with these settings: ${store.get('best_' + modeKey(), 0)}`;
   if (state === 'menu') reset();   // preview the chosen globe behind the menu
 }
-bindCheck('optEcho', 'echo');
 bindCheck('optShrink', 'shrink');
 bindCheck('optMarkers', 'markers');
 bindCheck('optSound', 'sound');
 bindSeg('segSize', 'size');
-bindSeg('segSpeed', 'speed');
+bindSeg('segDiff', 'diff');
 
 function startRun() {
   initAudio();
@@ -665,7 +655,7 @@ reset();
 idle();
 requestAnimationFrame(frame);
 window.__game = { get state() { return state; }, get score() { return score(); }, action, startRun,
-  get items() { return items.length; }, get echoes() { return items.filter(i => i.kind === 'ECHO').length; }, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
+  get items() { return items.length; }, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
 </script>
 <script>
 window.addEventListener('error', e => { const el = document.getElementById('err'); el.style.display = 'block'; el.textContent = 'Error: ' + e.message; });
