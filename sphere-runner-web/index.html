@@ -61,8 +61,6 @@
       <div class="sw" style="background:#ffd91a"></div><div>Coin</div>
     </div>
     <div class="opt"><div>Shrinking globe<small>The world gets smaller every lap</small></div><input type="checkbox" id="optShrink"></div>
-    <div class="opt"><div>Horizon markers<small>Poles that show obstacles before they come over the horizon</small></div><input type="checkbox" id="optMarkers"></div>
-    <div class="opt"><div>Globe size</div><div class="seg" id="segSize"><button data-v="18">S</button><button data-v="30">M</button><button data-v="45">L</button></div></div>
     <div class="opt"><div>Difficulty<small>Speed, obstacle density and mix</small></div><div class="seg" id="segDiff"><button data-v="easy">Easy</button><button data-v="medium">Medium</button><button data-v="hard">Hard</button></div></div>
     <div class="opt"><div>Sound</div><input type="checkbox" id="optSound"></div>
     <button class="go" id="playBtn">Play</button>
@@ -102,6 +100,7 @@ const GRAVITY = 45, JUMP_V = 14, SLAM_V = -26;
 const LANE_SPEED = 17;            // m/s sideways
 const HIT_SHRINK = 0.12;          // collision forgiveness
 const LAP_BONUS = 1.5;
+const GLOBE_R = 45;               // track radius in metres (was S 18 / M 30 / L 45 in testing)
 const SPAWN_AHEAD_M = 38, DESPAWN_BEHIND_M = 8;
 const JUMP_BUFFER = 0.15;         // a jump swiped just before landing still counts
 // Difficulty profiles. start/max: m/s, accel: m/s gained per second, gap: seconds between rows
@@ -124,8 +123,8 @@ const store = {
   set(k, v) { try { localStorage.setItem('sr_' + k, JSON.stringify(v)); } catch {} },
 };
 const opts = {
-  shrink: store.get('shrink', false), markers: store.get('markers', true),
-  size: store.get('size', 30), diff: store.get('diff', 'medium'), sound: store.get('sound', true),
+  shrink: store.get('shrink', false),
+  size: GLOBE_R, diff: store.get('diff', 'medium'), sound: store.get('sound', true),
 };
 const modeKey = () => `${opts.diff}_${opts.shrink ? 'S' : ''}${opts.size}`;
 
@@ -276,24 +275,16 @@ function addItem(kindName, phi, x, y0 = null, extra = {}) {
   const yb = y0 === null ? k.y0 : y0;
   const mesh = box(w, k.h, k.d, k.color, 1);
   planet.add(mesh);
-  const it = { kind: kindName, phi, x, y0: yb, y1: yb + k.h, hw: w / 2, hd: k.d / 2, mesh, alive: true, marker: null, ...extra };
-  if (opts.markers && kindName !== 'COIN') {
-    const m = new THREE.Mesh(boxGeo, mat(k.color, 0.55));
-    m.scale.set(0.12, 9, 0.12);
-    planet.add(m);
-    it.marker = m;
-  }
+  const it = { kind: kindName, phi, x, y0: yb, y1: yb + k.h, hw: w / 2, hd: k.d / 2, mesh, alive: true, ...extra };
   placeItem(it);
   items.push(it);
   return it;
 }
 function placeItem(it) {
   place(it.mesh, it.phi, it.x, it.y0 + (it.y1 - it.y0) / 2);
-  if (it.marker) place(it.marker, it.phi, it.x, it.y1 + 4.5);
 }
 function removeItem(it) {
   planet.remove(it.mesh);
-  if (it.marker) planet.remove(it.marker);
 }
 // Signed angular difference in (-PI, PI]: works for items that persist across laps.
 function wrapPi(a) { a = (a + Math.PI) % (Math.PI * 2); if (a < 0) a += Math.PI * 2; return a - Math.PI; }
@@ -497,10 +488,9 @@ function render(dt) {
   player.position.set(px, R + py + (h * sq) / 2, 0);
   player.rotation.z = (px - lane * LANE_W) * 0.15;
 
-  // Spinning coins, markers only while far away
+  // Spinning coins
   for (const it of items) {
     if (it.kind === 'COIN') it.mesh.rotateY(dt * 4);
-    if (it.marker) it.marker.visible = aheadM(it) > 12;
   }
 
   // Camera
@@ -622,9 +612,7 @@ function refreshMenu() {
   if (state === 'menu') reset();   // preview the chosen globe behind the menu
 }
 bindCheck('optShrink', 'shrink');
-bindCheck('optMarkers', 'markers');
 bindCheck('optSound', 'sound');
-bindSeg('segSize', 'size');
 bindSeg('segDiff', 'diff');
 
 function startRun() {
