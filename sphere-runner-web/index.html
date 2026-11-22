@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Sphere Runner Prototype</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #8cc0f2; overscroll-behavior: none;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #fff;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }
+  canvas { display: block; touch-action: none; }
+  .hud { position: fixed; left: 0; right: 0; top: 0; display: flex; justify-content: space-between; pointer-events: none;
+    padding: calc(env(safe-area-inset-top) + 12px) calc(env(safe-area-inset-right) + 16px) 0 calc(env(safe-area-inset-left) + 16px);
+    text-shadow: 0 2px 4px rgba(0,0,0,.5); }
+  #score { font-size: 40px; font-weight: 800; }
+  #info { text-align: right; font-size: 15px; line-height: 1.4; font-weight: 600; }
+  #flash { position: fixed; left: 0; right: 0; top: 22%; text-align: center; font-size: 54px; font-weight: 900;
+    pointer-events: none; text-shadow: 0 3px 8px rgba(0,0,0,.5); opacity: 0; transition: opacity .2s; white-space: pre-line; line-height: 1.1; }
+  #pauseBtn { position: fixed; right: calc(env(safe-area-inset-right) + 14px); bottom: calc(env(safe-area-inset-bottom) + 14px);
+    width: 44px; height: 44px; border-radius: 22px; border: 0; background: rgba(0,0,0,.3); color: #fff; font-size: 18px; font-weight: 800; }
+  .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(10,20,40,.55); padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom); }
+  .panel { width: min(360px, 100%); background: rgba(20,30,50,.92); border-radius: 18px; padding: 20px 20px 16px;
+    box-shadow: 0 10px 40px rgba(0,0,0,.4); max-height: 92vh; overflow-y: auto; touch-action: pan-y; }
+  .panel h1 { margin: 0 0 4px; font-size: 28px; }
+  .panel h2 { margin: 0 0 4px; font-size: 26px; }
+  .panel p { margin: 4px 0; opacity: .85; font-size: 14px; line-height: 1.4; }
+  .stats { font-size: 18px !important; opacity: 1 !important; margin: 10px 0 !important; }
+  .opt { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0;
+    border-top: 1px solid rgba(255,255,255,.1); font-size: 15px; }
+  .opt small { display: block; opacity: .65; font-size: 12px; }
+  .opt input[type=checkbox] { width: 22px; height: 22px; flex: none; }
+  .seg { display: flex; gap: 4px; flex: none; }
+  .seg button { border: 0; border-radius: 8px; padding: 6px 9px; background: rgba(255,255,255,.12); color: #fff; font-size: 13px; }
+  .seg button.on { background: #3d8bff; }
+  .go { width: 100%; margin-top: 12px; padding: 14px; font-size: 19px; font-weight: 800; border: 0; border-radius: 12px;
+    background: #3d8bff; color: #fff; }
+  .legend { display: grid; grid-template-columns: 14px 1fr; gap: 4px 8px; align-items: center; font-size: 13px; margin: 10px 0 4px; opacity: .9; }
+  .sw { width: 14px; height: 14px; border-radius: 3px; }
+  .hidden { display: none !important; }
+  #err { position: fixed; inset: auto 0 0 0; background: #b00; color: #fff; padding: 8px; font-size: 13px; display: none; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<div class="hud"><div id="score">0</div><div id="info"></div></div>
+<div id="flash"></div>
+<button id="pauseBtn" class="hidden">II</button>
+
+<div id="menu" class="overlay">
+  <div class="panel">
+    <h1>Sphere Runner</h1>
+    <p>Concept prototype. Swipe <b>left/right</b> to switch lane, <b>up</b> to jump, <b>down</b> to slide (or slam down in the air).</p>
+    <div class="legend">
+      <div class="sw" style="background:#ff8c26"></div><div>Low block: jump</div>
+      <div class="sw" style="background:#d940cc"></div><div>Floating bar: slide under</div>
+      <div class="sw" style="background:#d93333"></div><div>Wall: switch lane</div>
+      <div class="sw" style="background:#4de6ff"></div><div>Echo: your own trail from earlier laps (jump)</div>
+      <div class="sw" style="background:#ffd91a"></div><div>Coin</div>
+    </div>
+    <div class="opt"><div>Echo trail<small>You leave blocks behind; you meet them on the next two laps</small></div><input type="checkbox" id="optEcho"></div>
+    <div class="opt"><div>Shrinking globe<small>The world gets smaller every lap</small></div><input type="checkbox" id="optShrink"></div>
+    <div class="opt"><div>Horizon markers<small>Poles that show obstacles before they come over the horizon</small></div><input type="checkbox" id="optMarkers"></div>
+    <div class="opt"><div>Globe size</div><div class="seg" id="segSize"><button data-v="18">S</button><button data-v="30">M</button><button data-v="45">L</button></div></div>
+    <div class="opt"><div>Start speed</div><div class="seg" id="segSpeed"><button data-v="9">Slow</button><button data-v="12">Normal</button><button data-v="16">Fast</button></div></div>
+    <div class="opt"><div>Sound</div><input type="checkbox" id="optSound"></div>
+    <button class="go" id="playBtn">Play</button>
+    <p id="bestLine" style="text-align:center;margin-top:10px"></p>
+  </div>
+</div>
+
+<div id="over" class="overlay hidden">
+  <div class="panel" style="text-align:center">
+    <h2>Crashed</h2>
+    <p class="stats" id="overStats"></p>
+    <button class="go" id="againBtn">Run again</button>
+    <button class="go" id="menuBtn" style="background:rgba(255,255,255,.15)">Options</button>
+  </div>
+</div>
+
+<div id="paused" class="overlay hidden">
+  <div class="panel" style="text-align:center">
+    <h2>Paused</h2>
+    <button class="go" id="resumeBtn">Resume</button>
+    <button class="go" id="quitBtn" style="background:rgba(255,255,255,.15)">Options</button>
+  </div>
+</div>
+<div id="err"></div>
+
+<script type="module">
+import * as THREE from 'three';
+
+// =====================================================================
+// Tuning
+// =====================================================================
+const LANE_W = 2.2;
+const TRACK_HALF = LANE_W * 1.5 + 0.2;
+const PLAYER = { w: 0.9, h: 1.4, d: 0.9 };
+const SLIDE_H = 0.6, SLIDE_TIME = 0.7;
+const GRAVITY = 45, JUMP_V = 14, SLAM_V = -26;
+const LANE_SPEED = 17;            // m/s sideways
+const HIT_SHRINK = 0.12;          // collision forgiveness
+const MAX_SPEED = 30, ACCEL = 0.28, LAP_BONUS = 1.5;
+const SPAWN_AHEAD_M = 38, DESPAWN_BEHIND_M = 8;
+const MIN_ROW_GAP = 9;
+const JUMP_BUFFER = 0.15;         // a jump swiped just before landing still counts
+const ECHO_EVERY = 14;            // metres between echo blocks
+const ECHO_LAPS = 2;              // how many laps an echo survives
+const SHRINK_FACTOR = 0.85, MIN_R = 12, SHRINK_TIME = 1.5;
+const HIT_PAUSE = 0.25;
+
+// =====================================================================
+// Settings (remembered on this device when possible)
+// =====================================================================
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('sr_' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('sr_' + k, JSON.stringify(v)); } catch {} },
+};
+const opts = {
+  echo: store.get('echo', false), shrink: store.get('shrink', false), markers: store.get('markers', true),
+  size: store.get('size', 30), speed: store.get('speed', 12), sound: store.get('sound', true),
+};
+const modeKey = () => `${opts.echo ? 'E' : ''}${opts.shrink ? 'S' : ''}${opts.size}`;
+
+// =====================================================================
+// Renderer, scene, camera
+// =====================================================================
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x8cc0f2);
+const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 300);
+scene.add(new THREE.HemisphereLight(0xdfefff, 0x557755, 1.4));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+Object.assign(sun.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14, near: 1, far: 60 });
+scene.add(sun, sun.target);
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  // Keep the horizontal field of view ~74 degrees so all lanes fit in portrait.
+  const hfov = THREE.MathUtils.degToRad(62);
+  const vfov = 2 * Math.atan(Math.tan(hfov / 2) / camera.aspect);
+  camera.fov = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(vfov), 45, 78);
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+const matCache = {};
+function mat(color, opacity = 1) {
+  const key = color + '_' + opacity;
+  if (!matCache[key]) {
+    matCache[key] = new THREE.MeshLambertMaterial({ color, transparent: opacity < 1, opacity });
+  }
+  return matCache[key];
+}
+function box(w, h, d, color, opacity = 1) {
+  const m = new THREE.Mesh(boxGeo, mat(color, opacity));
+  m.scale.set(w, h, d);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  return m;
+}
+
+// =====================================================================
+// World: a globe that rotates around the X axis. The player sits on top.
+// Anything on the globe is placed by (phi = globe-local angle, x = lane offset, y = height).
+// =====================================================================
+let R = opts.size;                  // current track radius
+let targetR = R, shrinkFrom = R, shrinkT = 1;
+
+const planet = new THREE.Group();
+scene.add(planet);
+
+const globe = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), mat(0x59b366));
+globe.receiveShadow = true;
+planet.add(globe);
+
+const track = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 128, 1), mat(0x4a4a57));
+track.rotation.z = Math.PI / 2;     // axis along X
+track.receiveShadow = true;
+planet.add(track);
+
+const AX = new THREE.Vector3(1, 0, 0);
+function place(obj, phi, x, yCenter) {
+  const r = R + yCenter;
+  obj.position.set(x, r * Math.cos(phi), -r * Math.sin(phi));
+  obj.quaternion.setFromAxisAngle(AX, -phi);
+}
+
+// Lane dashes give a sense of speed. Count is based on the largest size so they stay dense.
+const dashes = [];
+{
+  const n = 96;
+  for (let i = 0; i < n; i++) {
+    for (const side of [-0.5, 0.5]) {
+      const d = box(0.1, 0.03, 1.2, 0xf2f2f2);
+      d.castShadow = false;
+      d.userData = { phi: (i / n) * Math.PI * 2, x: side * LANE_W };
+      planet.add(d);
+      dashes.push(d);
+    }
+  }
+}
+
+// Scenery cubes on the globe (fixed seed: every lap looks the same, so laps are noticeable).
+const deco = [];
+{
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const colors = [0x3f8c4d, 0x73cc73, 0x99804f, 0xd9d9e6, 0x2f6e3a];
+  while (deco.length < 260) {
+    const v = new THREE.Vector3(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1);
+    const len = v.length();
+    if (len < 0.1 || len > 1) continue;
+    v.normalize();
+    const s = 0.6 + rnd() * 1.8, h = s * (0.8 + rnd() * 1.7);
+    const c = box(s, h, s, colors[Math.floor(rnd() * colors.length)]);
+    c.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v);
+    c.userData = { dir: v, s, h };
+    planet.add(c);
+    deco.push(c);
+  }
+}
+
+function layoutWorld() {
+  const pr = R - 0.3;
+  globe.scale.setScalar(pr);
+  track.scale.set(R, TRACK_HALF * 2, R);
+  for (const d of dashes) place(d, d.userData.phi, d.userData.x, 0.01);
+  for (const c of deco) {
+    const { dir, s, h } = c.userData;
+    c.position.copy(dir).multiplyScalar(pr + h / 2 - 0.15);
+    c.visible = Math.abs(dir.x) * pr - s * 0.75 > TRACK_HALF + 0.3;   // keep the track clear
+  }
+  for (const it of items) placeItem(it);
+}
+
+// =====================================================================
+// Player
+// =====================================================================
+const player = box(PLAYER.w, PLAYER.h, PLAYER.d, 0x3380ff);
+scene.add(player);
+const playerMat = mat(0x3380ff), deadMat = mat(0xff2626);
+
+// =====================================================================
+// Obstacles, coins, echoes
+// =====================================================================
+const KIND = {
+  LOW:  { h: 1.0, y0: 0, d: 0.8, color: 0xff8c26 },
+  HIGH: { h: 2.2, y0: 1.0, d: 0.8, color: 0xd940cc },
+  WALL: { h: 3.5, y0: 0, d: 1.5, color: 0xd93333 },
+  ECHO: { h: 0.9, y0: 0, d: 0.8, color: 0x4de6ff },
+  COIN: { h: 0.45, y0: 0, d: 0.45, color: 0xffd91a },
+};
+let items = [];
+
+function addItem(kindName, phi, x, y0 = null, extra = {}) {
+  const k = KIND[kindName];
+  const w = kindName === 'COIN' ? 0.45 : LANE_W * 0.85;
+  const yb = y0 === null ? k.y0 : y0;
+  const mesh = box(w, k.h, k.d, k.color, kindName === 'ECHO' ? 0.75 : 1);
+  planet.add(mesh);
+  const it = { kind: kindName, phi, x, y0: yb, y1: yb + k.h, hw: w / 2, hd: k.d / 2, mesh, alive: true, marker: null, ...extra };
+  if (opts.markers && kindName !== 'COIN' && kindName !== 'ECHO') {
+    const m = new THREE.Mesh(boxGeo, mat(k.color, 0.55));
+    m.scale.set(0.12, 9, 0.12);
+    planet.add(m);
+    it.marker = m;
+  }
+  placeItem(it);
+  items.push(it);
+  return it;
+}
+function placeItem(it) {
+  place(it.mesh, it.phi, it.x, it.y0 + (it.y1 - it.y0) / 2);
+  if (it.marker) place(it.marker, it.phi, it.x, it.y1 + 4.5);
+}
+function removeItem(it) {
+  planet.remove(it.mesh);
+  if (it.marker) planet.remove(it.marker);
+}
+// Signed angular difference in (-PI, PI]: works for items that persist across laps.
+function wrapPi(a) { a = (a + Math.PI) % (Math.PI * 2); if (a < 0) a += Math.PI * 2; return a - Math.PI; }
+const aheadM = (it) => wrapPi(it.phi - angle) * R;
+
+function echoNear(phi, laneX, metres) {
+  return items.some(it => it.kind === 'ECHO' && it.x === laneX && Math.abs(wrapPi(it.phi - phi)) * R < metres);
+}
+
+function spawnRow(phi) {
+  const difficulty = THREE.MathUtils.clamp((speed - opts.speed) / (MAX_SPEED - opts.speed), 0, 1);
+  const row = [];
+  for (let i = 0; i < 3; i++) {
+    const r = Math.random(), e = 0.45 - 0.2 * difficulty;
+    row.push(r < e ? 'EMPTY' : r < e + 0.2 ? 'LOW' : r < e + 0.38 ? 'HIGH' : 'WALL');
+  }
+  // Lanes where your own echo sits stay clear, so the combination is always possible.
+  for (let i = 0; i < 3; i++) if (echoNear(phi, (i - 1) * LANE_W, 4)) row[i] = 'EMPTY';
+  if (!row.some(k => k !== 'WALL')) row[Math.floor(Math.random() * 3)] = 'EMPTY';
+  if (row.every(k => k === 'EMPTY') && Math.random() < 0.7 && !opts.echo) row[Math.floor(Math.random() * 3)] = Math.random() < 0.5 ? 'LOW' : 'HIGH';
+
+  row.forEach((k, i) => { if (k !== 'EMPTY') addItem(k, phi, (i - 1) * LANE_W); });
+
+  // A line of coins in a passable lane, shaped to teach the right move.
+  const lanes = [0, 1, 2].filter(i => row[i] !== 'WALL');
+  if (!lanes.length || Math.random() < 0.35) return;
+  const ci = lanes[Math.floor(Math.random() * lanes.length)];
+  for (let k = 0; k < 5; k++) {
+    const d = (k - 2) * 1.6;
+    let y = 0.4;
+    if (row[ci] === 'LOW') y = 1.2 + 1.2 * (1 - (d / 4) ** 2);
+    else if (row[ci] === 'HIGH') y = 0.1;
+    addItem('COIN', phi + d / R, (ci - 1) * LANE_W, y);
+  }
+}
+
+function updateSpawning() {
+  const ahead = Math.min(SPAWN_AHEAD_M / R, Math.PI * 0.9);
+  const gapMul = opts.echo ? 1.7 : 1;
+  while (nextSpawn < angle + ahead) {
+    spawnRow(nextSpawn);
+    nextSpawn += Math.max(MIN_ROW_GAP, speed * 0.85) * gapMul / R;
+  }
+  items = items.filter(it => {
+    let gone;
+    if (it.kind === 'ECHO') gone = angle - it.born > ECHO_LAPS * Math.PI * 2 + DESPAWN_BEHIND_M / R;
+    else gone = (it.phi - angle) * R < -DESPAWN_BEHIND_M;
+    if (gone) removeItem(it);
+    return !gone;
+  });
+}
+
+function dropEcho() {
+  const laneX = lane * LANE_W;
+  // Don't drop on top of something you just jumped over or slid under.
+  const phi = angle - 2.5 / R;
+  const blocked = items.some(it => it.kind !== 'COIN' && it.x === laneX && Math.abs(wrapPi(it.phi - phi)) * R < 3);
+  if (blocked) return;
+  addItem('ECHO', phi, laneX, null, { born: angle });
+}
+
+// =====================================================================
+// Game state
+// =====================================================================
+let state = 'menu';       // menu | run | hit | over | paused
+let angle = 0, speed = 12, dist = 0, nextEcho = 0, nextSpawn = 0;
+let lane = 0, px = 0, py = 0, vy = 0, slideT = 0, jumpBufferT = 0;
+let coins = 0, lap = 0, hitT = 0, shake = 0, squash = 0;
+let flashT = 0;
+
+function reset() {
+  for (const it of items) removeItem(it);
+  items = [];
+  R = targetR = shrinkFrom = opts.size; shrinkT = 1;
+  angle = 0; speed = opts.speed; dist = 0; nextEcho = ECHO_EVERY;
+  lane = 0; px = 0; py = 0; vy = 0; slideT = 0; jumpBufferT = 0;
+  coins = 0; lap = 0; shake = 0; squash = 0;
+  nextSpawn = 25 / R;
+  player.material = playerMat;
+  planet.rotation.x = 0;
+  layoutWorld();
+  updateSpawning();
+  updateHud();
+}
+
+const score = () => Math.floor(dist) + coins * 10;
+
+function crash() {
+  state = 'hit';
+  hitT = HIT_PAUSE;
+  shake = 0.5;
+  player.material = deadMat;
+  sfx.crash();
+  try { navigator.vibrate && navigator.vibrate(80); } catch {}
+}
+
+function gameOver() {
+  state = 'over';
+  const s = score(), key = 'best_' + modeKey();
+  const best = store.get(key, 0), isBest = s > best;
+  if (isBest) store.set(key, s);
+  $('overStats').innerHTML = `Score <b>${s}</b>${isBest ? ' &nbsp;NEW BEST!' : ''}<br>Best ${Math.max(s, best)}<br>` +
+    `Laps ${lap} &nbsp;·&nbsp; Coins ${coins}<br>Distance ${Math.floor(dist)} m`;
+  show('over');
+  $('pauseBtn').classList.add('hidden');
+}
+
+function flash(text) { const f = $('flash'); f.textContent = text; f.style.opacity = 1; flashT = 1.2; }
+
+// =====================================================================
+// Update
+// =====================================================================
+function playerHeight() { return slideT > 0 && py <= 0 ? SLIDE_H : PLAYER.h; }
+
+function step(dt) {
+  if (state === 'hit') {
+    hitT -= dt;
+    if (hitT <= 0) gameOver();
+    return;
+  }
+  if (state !== 'run') return;
+
+  speed = Math.min(MAX_SPEED, speed + ACCEL * dt);
+  angle += (speed / R) * dt;
+  dist += speed * dt;
+  planet.rotation.x = angle % (Math.PI * 2);
+
+  const newLap = Math.floor(angle / (Math.PI * 2));
+  if (newLap > lap) {
+    lap = newLap;
+    speed = Math.min(MAX_SPEED, speed + LAP_BONUS);
+    if (opts.shrink && R > MIN_R + 0.01) {
+      shrinkFrom = R; targetR = Math.max(MIN_R, R * SHRINK_FACTOR); shrinkT = 0;
+      flash(`LAP ${lap + 1}\nSHRINK`);
+    } else flash(`LAP ${lap + 1}`);
+    sfx.lap();
+  }
+  if (shrinkT < 1) {
+    shrinkT = Math.min(1, shrinkT + dt / SHRINK_TIME);
+    const t = shrinkT * shrinkT * (3 - 2 * shrinkT);
+    R = shrinkFrom + (targetR - shrinkFrom) * t;
+    layoutWorld();
+  }
+
+  // Player movement
+  px = moveToward(px, lane * LANE_W, LANE_SPEED * dt);
+  const wasAir = py > 0 || vy > 0;
+  if (wasAir) {
+    vy -= GRAVITY * dt;
+    py += vy * dt;
+    if (py <= 0) {
+      py = 0; vy = 0; squash = 1;
+      if (jumpBufferT > 0) { jump(); }
+    }
+  }
+  if (jumpBufferT > 0) jumpBufferT -= dt;
+  if (slideT > 0 && py <= 0) slideT -= dt;
+
+  if (opts.echo && dist >= nextEcho) { dropEcho(); nextEcho += ECHO_EVERY; }
+
+  updateSpawning();
+  collide();
+  updateHud();
+}
+
+function moveToward(a, b, d) { return Math.abs(b - a) <= d ? b : a + Math.sign(b - a) * d; }
+
+function collide() {
+  const ph = playerHeight();
+  const hw = PLAYER.w / 2 - HIT_SHRINK, hd = PLAYER.d / 2 - HIT_SHRINK;
+  for (const it of items) {
+    if (!it.alive) continue;
+    if (it.kind === 'ECHO' && angle - it.born < 1.0) continue;   // not armed until you've moved away
+    const d = aheadM(it);
+    if (Math.abs(d) > it.hd + hd) continue;
+    if (Math.abs(it.x - px) > it.hw + hw) continue;
+    if (py + ph - HIT_SHRINK <= it.y0 || py + HIT_SHRINK >= it.y1) continue;
+    if (it.kind === 'COIN') {
+      it.alive = false; it.mesh.visible = false; coins++; sfx.coin();
+    } else if (!window.__god) { crash(); return; }
+  }
+}
+
+function jump() {
+  slideT = 0; vy = JUMP_V; jumpBufferT = 0; squash = -1; sfx.jump();
+}
+
+function action(dir) {
+  if (state !== 'run') return;
+  if (dir === 'left') { if (lane > -1) { lane--; sfx.swish(); } }
+  else if (dir === 'right') { if (lane < 1) { lane++; sfx.swish(); } }
+  else if (dir === 'up') {
+    if (py <= 0 && vy <= 0) jump();
+    else jumpBufferT = JUMP_BUFFER;
+  } else if (dir === 'down') {
+    slideT = SLIDE_TIME;
+    if (py > 0) vy = SLAM_V;
+    sfx.slide();
+  }
+}
+
+// =====================================================================
+// Visuals
+// =====================================================================
+const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
+let camX = 0;
+function render(dt) {
+  // Player with squash & stretch
+  const h = playerHeight();
+  squash *= Math.pow(0.001, dt);
+  const sq = squash > 0 ? 1 - 0.25 * squash : 1 + 0.2 * -squash;
+  player.scale.set(PLAYER.w / Math.sqrt(sq), h * sq, PLAYER.d / Math.sqrt(sq));
+  player.position.set(px, R + py + (h * sq) / 2, 0);
+  player.rotation.z = (px - lane * LANE_W) * 0.15;
+
+  // Spinning coins and fading echoes
+  for (const it of items) {
+    if (it.kind === 'COIN') it.mesh.rotateY(dt * 4);
+    if (it.marker) it.marker.visible = aheadM(it) > 12;
+  }
+
+  // Camera
+  camX += (px * 0.6 - camX) * Math.min(1, dt * 8);
+  let sx = 0, sy = 0;
+  if (shake > 0) { shake = Math.max(0, shake - dt); sx = (Math.random() - 0.5) * shake; sy = (Math.random() - 0.5) * shake; }
+  camPos.set(camX + sx, R + 4 + sy, 6);
+  camLook.set(camX, R - 1.5, -12);
+  camera.position.copy(camPos);
+  camera.lookAt(camLook);
+
+  // Sun follows the top of the globe
+  sun.position.set(8, R + 18, 8);
+  sun.target.position.set(0, R, -4);
+
+  if (flashT > 0) { flashT -= dt; if (flashT <= 0) $('flash').style.opacity = 0; }
+
+  renderer.render(scene, camera);
+}
+
+let fps = 60;
+function updateHud() {
+  $('score').textContent = score();
+  $('info').innerHTML = `Coins ${coins}<br>Lap ${lap + 1}<br>${Math.round(speed * 3.6)} km/h` +
+    `${opts.shrink ? `<br>Globe ${Math.round(R)} m` : ''}<br><span style="opacity:.6">${Math.round(fps)} fps</span>`;
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  fps += (1 / Math.max(dt, 0.001) - fps) * 0.05;
+  step(dt);
+  render(dt);
+  requestAnimationFrame(frame);
+}
+
+// =====================================================================
+// Input: swipes (touch or mouse drag) and keyboard
+// =====================================================================
+const SWIPE_MIN = 28;
+let down = null;
+const cvs = renderer.domElement;
+cvs.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, used: false }; });
+cvs.addEventListener('pointermove', e => {
+  if (!down || down.used) return;
+  const dx = e.clientX - down.x, dy = e.clientY - down.y;
+  if (Math.hypot(dx, dy) < SWIPE_MIN) return;
+  down.used = true;
+  if (Math.abs(dx) > Math.abs(dy)) action(dx > 0 ? 'right' : 'left');
+  else action(dy > 0 ? 'down' : 'up');
+});
+const endPointer = () => { down = null; };
+cvs.addEventListener('pointerup', endPointer);
+cvs.addEventListener('pointercancel', endPointer);
+document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+window.addEventListener('keydown', e => {
+  const map = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
+    ArrowUp: 'up', KeyW: 'up', Space: 'up', ArrowDown: 'down', KeyS: 'down' };
+  if (map[e.code]) { e.preventDefault(); action(map[e.code]); }
+  if ((e.code === 'Enter' || e.code === 'Space') && state === 'over') startRun();
+  if (e.code === 'Escape' || e.code === 'KeyP') togglePause();
+});
+
+// =====================================================================
+// Sound (tiny synth, no files)
+// =====================================================================
+let actx = null;
+function beep(f1, f2, dur, type = 'square', vol = 0.08) {
+  if (!opts.sound || !actx) return;
+  const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f1, t);
+  o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(actx.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+const sfx = {
+  jump: () => beep(300, 700, 0.12),
+  slide: () => beep(400, 150, 0.12, 'triangle'),
+  swish: () => beep(500, 350, 0.06, 'triangle', 0.05),
+  coin: () => beep(988, 1319, 0.08, 'square', 0.05),
+  lap: () => { beep(523, 523, 0.1); setTimeout(() => beep(784, 784, 0.18), 110); },
+  crash: () => beep(200, 40, 0.4, 'sawtooth', 0.12),
+};
+function initAudio() {
+  try {
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+  } catch { actx = null; }
+}
+
+// =====================================================================
+// Menus
+// =====================================================================
+function $(id) { return document.getElementById(id); }
+function show(id) {
+  for (const o of ['menu', 'over', 'paused']) $(o).classList.toggle('hidden', o !== id);
+}
+function bindCheck(id, key) {
+  const el = $(id);
+  el.checked = opts[key];
+  el.addEventListener('change', () => { opts[key] = el.checked; store.set(key, el.checked); refreshMenu(); });
+}
+function bindSeg(id, key) {
+  const seg = $(id);
+  const paint = () => seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', +b.dataset.v === opts[key]));
+  seg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    opts[key] = +b.dataset.v; store.set(key, opts[key]); paint(); refreshMenu();
+  });
+  paint();
+}
+function refreshMenu() {
+  $('bestLine').textContent = `Best with these settings: ${store.get('best_' + modeKey(), 0)}`;
+  if (state === 'menu') reset();   // preview the chosen globe behind the menu
+}
+bindCheck('optEcho', 'echo');
+bindCheck('optShrink', 'shrink');
+bindCheck('optMarkers', 'markers');
+bindCheck('optSound', 'sound');
+bindSeg('segSize', 'size');
+bindSeg('segSpeed', 'speed');
+
+function startRun() {
+  initAudio();
+  reset();
+  state = 'run';
+  show(null);
+  $('pauseBtn').classList.remove('hidden');
+  flash('GO!');
+}
+function togglePause() {
+  if (state === 'run') { state = 'paused'; show('paused'); }
+  else if (state === 'paused') { state = 'run'; show(null); last = performance.now(); }
+}
+$('playBtn').addEventListener('click', startRun);
+$('againBtn').addEventListener('click', startRun);
+$('menuBtn').addEventListener('click', () => { state = 'menu'; show('menu'); refreshMenu(); });
+$('quitBtn').addEventListener('click', () => { state = 'menu'; show('menu'); $('pauseBtn').classList.add('hidden'); refreshMenu(); });
+$('resumeBtn').addEventListener('click', togglePause);
+$('pauseBtn').addEventListener('click', togglePause);
+document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'run') togglePause(); });
+
+// Idle "attract" spin behind the menu
+const idle = () => { if (state === 'menu') { angle += 0.002; planet.rotation.x = angle % (Math.PI * 2); updateSpawning(); } requestAnimationFrame(idle); };
+
+refreshMenu();
+reset();
+idle();
+requestAnimationFrame(frame);
+window.__game = { get state() { return state; }, get score() { return score(); }, action, startRun,
+  get items() { return items.length; }, get echoes() { return items.filter(i => i.kind === 'ECHO').length; }, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
+</script>
+<script>
+window.addEventListener('error', e => { const el = document.getElementById('err'); el.style.display = 'block'; el.textContent = 'Error: ' + e.message; });
+</script>
+</body>
+</html>
