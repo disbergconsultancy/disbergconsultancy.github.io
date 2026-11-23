@@ -3,9 +3,13 @@ config_version=5
 
 [application]
 
-config/name="Sphere Runner Prototype"
-run/main_scene="res://main.tscn"
-config/features=PackedStringArray("4.3", "Mobile")
+config/name="Sphere Runner"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.7", "Mobile")
+
+[autoload]
+
+Config="*res://scripts/config.gd"
 
 [display]
 

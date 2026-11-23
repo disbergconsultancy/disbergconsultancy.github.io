@@ -1,0 +1,554 @@
+extends Node3D
+## Sphere Runner: game state, the run loop (movement, collisions, scoring), camera and HUD.
+## The player stays on top of the globe; the globe rotates toward the camera.
+##
+## Headless self-test: godot --headless --path . -- --autotest
+
+var planet: Planet
+var spawner: Spawner
+var character: BlockCharacter
+var hitbox: MeshInstance3D
+var camera: Camera3D
+var hud: Hud
+var swipe: SwipeInput
+
+var state := "menu"            # menu | run | hit | over | paused
+var angle := 0.0               # how far the globe has turned (radians)
+var speed := 0.0
+var dist := 0.0
+var lap := 0
+var lane := 0
+var px := 0.0
+var py := 0.0
+var vy := 0.0
+var grounded := true
+var slide_t := 0.0
+var jump_buffer_t := 0.0
+var float_t := 0.0
+var dash_t := 0.0
+var hit_t := 0.0
+var pts := 0.0
+var coins := 0
+var close_calls := 0
+var combo := 0
+var combo_t := 0.0
+var combo_level := 1
+var shake := 0.0
+var squash := 0.0
+var cam_x := 0.0
+var cam_y := 0.0
+var best := 0
+var god := false               # test mode: no crashes
+
+var _test := {}                # autotest bookkeeping
+
+
+func _ready() -> void:
+	_build_environment()
+	planet = Planet.new()
+	add_child(planet)
+	planet.build()
+	spawner = Spawner.new(planet)
+	character = BlockCharacter.new()
+	add_child(character)
+	hitbox = MeshInstance3D.new()
+	hitbox.mesh = BoxMesh.new()
+	var wire := StandardMaterial3D.new()
+	wire.albedo_color = Color(0, 1, 0.65, 0.35)
+	wire.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	hitbox.material_override = wire
+	hitbox.visible = false
+	add_child(hitbox)
+	swipe = SwipeInput.new()
+	add_child(swipe)
+	swipe.action.connect(_on_action)
+	swipe.tapped.connect(_on_tap)
+	hud = Hud.new()
+	add_child(hud)
+	hud.play_pressed.connect(start_run)
+	hud.again_pressed.connect(start_run)
+	hud.menu_pressed.connect(_to_menu)
+	hud.pause_pressed.connect(_toggle_pause)
+	best = _load_best()
+	reset()
+	hud.show_menu(best)
+	var args := OS.get_cmdline_user_args()
+	if "--autotest" in args:
+		_test = {"phase": "god", "kinds": {}, "frames": 0}
+	elif "--shot" in args:
+		# Screenshot: --shot <file.png> <seconds into an invincible run> [menu]
+		var i := args.find("--shot")
+		_test = {"phase": "shot", "path": args[i + 1], "t": float(args[i + 2]), "menu": "menu" in args, "done": false}
+
+
+func _build_environment() -> void:
+	var th: Dictionary = Config.THEME
+	var env := Environment.new()
+	env.background_mode = Environment.BG_SKY
+	var sky := Sky.new()
+	var sm := ProceduralSkyMaterial.new()
+	sm.sky_top_color = th["sky_top"]
+	sm.sky_horizon_color = th["sky_bottom"]
+	sm.ground_horizon_color = th["sky_bottom"]
+	sm.ground_bottom_color = th["sky_bottom"]
+	sky.sky_material = sm
+	env.sky = sky
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.ambient_light_energy = 0.3
+	# Light haze for depth; kept off the sky so colours stay saturated.
+	env.fog_enabled = true
+	env.fog_light_color = th["sky_bottom"]
+	env.fog_density = 0.003
+	env.fog_sky_affect = 0.0
+	var we := WorldEnvironment.new()
+	we.environment = env
+	add_child(we)
+	var sun := DirectionalLight3D.new()
+	sun.rotation_degrees = Vector3(-55, -30, 0)
+	sun.light_energy = 1.0
+	sun.shadow_enabled = true
+	sun.directional_shadow_max_distance = 40.0
+	add_child(sun)
+	camera = Camera3D.new()
+	camera.keep_aspect = Camera3D.KEEP_WIDTH   # all lanes fit in portrait
+	camera.fov = 62.0
+	camera.far = 300.0
+	add_child(camera)
+
+
+# =====================================================================
+# Run flow
+# =====================================================================
+
+func reset() -> void:
+	planet.clear_items()
+	angle = 0.0
+	planet.rotation.x = 0.0
+	speed = Config.diff()["start"]
+	dist = 0.0
+	lap = 0
+	lane = 0
+	px = 0.0
+	py = 0.0
+	vy = 0.0
+	grounded = true
+	slide_t = 0.0
+	jump_buffer_t = 0.0
+	float_t = 0.0
+	dash_t = 0.0
+	pts = 0.0
+	coins = 0
+	close_calls = 0
+	combo = 0
+	combo_t = 0.0
+	combo_level = 1
+	shake = 0.0
+	character.set_dead(false)
+	spawner.speed = speed
+	spawner.reset(angle)
+	spawner.update(angle)
+	_update_hud()
+
+
+func start_run() -> void:
+	reset()
+	state = "run"
+	hud.show_run()
+	hud.flash("GO!")
+
+
+func _to_menu() -> void:
+	state = "menu"
+	reset()
+	hud.show_menu(best)
+
+
+func _toggle_pause() -> void:
+	if state == "run":
+		state = "paused"
+		hud.flash("PAUSED")
+	elif state == "paused":
+		state = "run"
+		hud.flash("")
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and state == "run":
+		_toggle_pause()
+
+
+func score() -> int:
+	return int(pts)
+
+
+func crash() -> void:
+	if god:
+		return
+	state = "hit"
+	hit_t = Config.HIT_PAUSE
+	shake = 0.5
+	character.set_dead(true)
+	Input.vibrate_handheld(80)
+
+
+func _game_over() -> void:
+	state = "over"
+	var s := score()
+	var is_best := s > best
+	if is_best:
+		best = s
+		_save_best()
+	hud.show_over("Score %d%s\nBest %d\nLaps %d · Coins %d\nDistance %d m · Close calls %d" % [
+		s, "  NEW BEST!" if is_best else "", best, lap, coins, int(dist), close_calls])
+
+
+func _on_tap() -> void:
+	if state == "paused":
+		_toggle_pause()
+
+
+func _on_action(dir: String) -> void:
+	if state != "run":
+		return
+	match dir:
+		"left", "right":
+			var nl := clampi(lane + (-1 if dir == "left" else 1), -1, 1)
+			if nl != lane:
+				lane = nl
+				if not grounded:
+					dash_t = 0.18   # air dash: faster lane switch in the air
+		"up":
+			if grounded:
+				_jump()
+			else:
+				jump_buffer_t = Config.JUMP_BUFFER
+		"down":
+			slide_t = Config.SLIDE_TIME
+			if not grounded:
+				vy = Config.SLAM_V
+
+
+func _jump() -> void:
+	slide_t = 0.0
+	vy = Config.JUMP_V
+	jump_buffer_t = 0.0
+	grounded = false
+	squash = -1.0
+	float_t = 0.0
+
+
+func _add_combo(n: int) -> void:
+	combo += n
+	combo_t = Config.COMBO_TIME
+	var lv := _combo_mult()
+	if lv > combo_level:
+		combo_level = lv
+		hud.pop("COMBO x%d" % lv)
+
+
+func _combo_mult() -> int:
+	return 1 + mini(4, combo / 10)
+
+
+# =====================================================================
+# Update
+# =====================================================================
+
+func _process(delta: float) -> void:
+	if not _test.is_empty():
+		_autotest_tick()
+		return
+	var dt := minf(delta, 0.05)
+	step(dt)
+	_render(dt)
+
+
+func step(dt: float) -> void:
+	if state == "hit":
+		hit_t -= dt
+		if hit_t <= 0.0:
+			_game_over()
+		return
+	if state != "run":
+		if state == "menu":
+			angle += dt * 0.12        # idle spin behind the menu
+			planet.rotation.x = fmod(angle, TAU)
+			spawner.update(angle)
+		return
+	var d: Dictionary = Config.diff()
+	speed = minf(d["max"], speed + d["accel"] * dt)
+	angle += speed / planet.radius * dt
+	dist += speed * dt
+	pts += speed * dt
+	planet.rotation.x = fmod(angle, TAU)
+	var new_lap := int(angle / TAU)
+	if new_lap > lap:
+		lap = new_lap
+		speed = minf(d["max"], speed + Config.LAP_BONUS)
+		hud.flash("LAP %d" % (lap + 1))
+	if combo_t > 0.0:
+		combo_t -= dt
+		if combo_t <= 0.0:
+			combo = 0
+			combo_level = 1
+	if dash_t > 0.0:
+		dash_t -= dt
+	# Moving blocks
+	var t := Time.get_ticks_msec() / 1000.0
+	for it in planet.items:
+		if it.move_amp > 0.0:
+			it.x = it.cx + sin(t * it.move_speed + it.move_phase) * it.move_amp
+			planet.place_item(it)
+	_move_player(dt)
+	spawner.speed = speed
+	spawner.update(angle)
+	_collide()
+	_update_hud()
+
+
+func _player_height() -> float:
+	return Config.SLIDE_H if slide_t > 0.0 and grounded else Config.PLAYER_SIZE.y
+
+
+## Highest surface under the player that they can stand on (ramps and long blocks).
+func _surface_under_player() -> float:
+	var g := 0.0
+	for it in planet.items:
+		if it.kind != "PLATFORM" and it.kind != "RAMP":
+			continue
+		var d := _ahead_m(it)
+		if absf(d) > it.hd + 0.2 or absf(it.x - px) > it.hw + 0.2:
+			continue
+		var s := it.y1
+		if it.kind == "RAMP":
+			s = it.y1 * clampf((it.hd - d) / (2.0 * it.hd), 0.0, 1.0)
+		if py >= s - Config.STEP_UP:
+			g = maxf(g, s)
+	return g
+
+
+func _move_player(dt: float) -> void:
+	px = move_toward(px, lane * Config.LANE_W, Config.LANE_SPEED * (2.0 if dash_t > 0.0 else 1.0) * dt)
+	var ground_y := _surface_under_player()
+	if grounded and py < ground_y:
+		py = ground_y             # walking up a ramp
+	if py > ground_y + 0.001 or vy > 0.0:
+		grounded = false
+		var g := Config.GRAVITY
+		# Holding the finger down after a jump floats a little near the top.
+		if swipe.holding and vy < 3.0 and float_t < Config.FLOAT_TIME and slide_t <= 0.0:
+			g *= Config.FLOAT_GRAVITY
+			float_t += dt
+		vy -= g * dt
+		py += vy * dt
+		if py <= ground_y:
+			var hard := vy < -12.0
+			py = ground_y
+			vy = 0.0
+			grounded = true
+			if hard:
+				squash = 1.0
+			character.land_t = 0.16
+			if jump_buffer_t > 0.0:
+				_jump()
+	else:
+		grounded = true
+		py = ground_y
+	if jump_buffer_t > 0.0:
+		jump_buffer_t -= dt
+	if slide_t > 0.0 and grounded:
+		slide_t -= dt
+
+
+## Metres ahead (+) or behind (-) of the player.
+func _ahead_m(it: Item) -> float:
+	return wrapf(it.phi - angle, -PI, PI) * planet.radius
+
+
+func _collide() -> void:
+	var ph := _player_height()
+	var hw := Config.PLAYER_SIZE.x / 2.0 - Config.HIT_SHRINK
+	var hd := Config.PLAYER_SIZE.z / 2.0 - Config.HIT_SHRINK
+	for it in planet.items:
+		if not it.alive:
+			continue
+		var d := _ahead_m(it)
+		var overlap_z := absf(d) <= it.hd + hd
+		var overlap_x := absf(it.x - px) <= it.hw + hw
+		# Close calls: clearing an obstacle by a small margin.
+		if it.kind in Config.HAZARDS and not it.passed and it.kind != "PLATFORM" and it.kind != "PIT":
+			if overlap_z:
+				var lat := absf(it.x - px) - (it.hw + Config.PLAYER_SIZE.x / 2.0)
+				var above := py - it.y1
+				var below := it.y0 - (py + ph)
+				it.min_clear = minf(it.min_clear, maxf(lat, maxf(above, below)))
+			elif d < -(it.hd + hd):
+				it.passed = true
+				if it.min_clear < Config.NEAR_MISS and it.min_clear > -0.3:
+					close_calls += 1
+					var b := 25 * _combo_mult()
+					pts += b
+					_add_combo(3)
+					hud.pop("CLOSE! +%d" % b)
+		if not overlap_z or not overlap_x:
+			continue
+		match it.kind:
+			"RAMP":
+				continue
+			"PIT":
+				# Glowing floor: deadly with your feet on it (thinner than the hitbox margin).
+				if py <= 0.05:
+					crash()
+					if state != "run":
+						return
+				continue
+			"PLATFORM":
+				if py < it.y1 - Config.STEP_UP:
+					crash()
+					if state != "run":
+						return
+				continue
+		if py + ph - Config.HIT_SHRINK <= it.y0 or py + Config.HIT_SHRINK >= it.y1:
+			continue
+		if it.kind == "COIN":
+			planet.hide_item(it)
+			coins += 1
+			pts += 10 * _combo_mult()
+			_add_combo(1)
+		else:
+			crash()
+			if state != "run":
+				return
+
+
+# =====================================================================
+# Visuals
+# =====================================================================
+
+func _render(dt: float) -> void:
+	var h := _player_height()
+	squash *= pow(0.001, dt)
+	var sq := 1.0 - 0.25 * squash if squash > 0.0 else 1.0 + 0.2 * -squash
+	character.position = Vector3(px, planet.radius + py, 0.0)
+	character.scale = Vector3(1.0 / sqrt(sq), sq, 1.0 / sqrt(sq))
+	character.update_pose(dt, state, {
+		"grounded": grounded, "slide": slide_t, "vy": vy, "speed": speed,
+		"floating": swipe.holding and float_t > 0.0 and float_t < Config.FLOAT_TIME and vy < 3.0,
+		"lean": px - lane * Config.LANE_W, "twist": (lane * Config.LANE_W - px) if dash_t > 0.0 else 0.0})
+	hitbox.scale = Vector3(Config.PLAYER_SIZE.x, h, Config.PLAYER_SIZE.z)
+	hitbox.position = Vector3(px, planet.radius + py + h / 2.0, 0.0)
+	for it in planet.items:
+		for p in it.parts:
+			if p.get("spin", false):
+				p["node"].rotate_object_local(Vector3.UP, dt * 4.0)
+	# Camera follows sideways and rises a little with jumps.
+	cam_x += (px * 0.6 - cam_x) * minf(1.0, dt * 8.0)
+	cam_y += (py * 0.6 - cam_y) * minf(1.0, dt * 3.0)
+	var off := Vector3.ZERO
+	if shake > 0.0:
+		shake = maxf(0.0, shake - dt)
+		off = Vector3(randf_range(-0.5, 0.5), randf_range(-0.5, 0.5), 0.0) * shake
+	var r := planet.radius
+	camera.position = Vector3(cam_x, r + 4.0 + cam_y, 6.0 + cam_y * 0.9) + off
+	camera.look_at(Vector3(cam_x, r - 1.5 + cam_y * 0.55, -12.0 - cam_y), Vector3.UP)
+
+
+func _update_hud() -> void:
+	hud.score_label.text = str(score())
+	hud.info_label.text = "Coins %d\nLap %d\n%d km/h" % [coins, lap + 1, int(speed * 3.6)]
+	hud.combo_label.text = "COMBO x%d  (%d)" % [_combo_mult(), combo] if combo >= 3 else ""
+
+
+# =====================================================================
+# Save
+# =====================================================================
+
+func _load_best() -> int:
+	var cfg := ConfigFile.new()
+	if cfg.load("user://save.cfg") == OK:
+		return int(cfg.get_value("best", Config.difficulty, 0))
+	return 0
+
+
+func _save_best() -> void:
+	var cfg := ConfigFile.new()
+	cfg.load("user://save.cfg")
+	cfg.set_value("best", Config.difficulty, best)
+	cfg.save("user://save.cfg")
+
+
+# =====================================================================
+# Headless self-test: simulates runs at a fixed time step and prints a report.
+# =====================================================================
+
+func _autotest_tick() -> void:
+	var dt := 1.0 / 60.0
+	if _test["phase"] == "shot":
+		if _test["done"]:
+			return
+		_test["done"] = true
+		if not _test["menu"]:
+			god = true
+			start_run()
+			for i in int(_test["t"] * 60.0):
+				step(dt)
+				_render(dt)
+		else:
+			for i in 30:
+				step(dt)
+				_render(dt)
+		for i in 3:
+			await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(_test["path"])
+		print("AUTOTEST screenshot saved: ", _test["path"])
+		get_tree().quit()
+		return
+	if _test["phase"] == "god":
+		god = true
+		start_run()
+		var jumps := 0
+		for i in 60 * 120:          # two minutes of play
+			step(dt)
+			_render(dt)
+			for it in planet.items:
+				_test["kinds"][it.kind] = true
+			if i % 600 == 0:
+				var ahead := 0
+				for it in planet.items:
+					if _ahead_m(it) > 0.0:
+						ahead += 1
+				print("AUTOTEST t=%ds items=%d ahead=%d next_spawn_ahead=%.1fm" % [i / 60, planet.items.size(), ahead, (spawner.next_spawn - angle) * planet.radius])
+			if i % 90 == 0:
+				_on_action(["left", "right", "up", "down"][i / 90 % 4])
+				jumps += 1
+		print("AUTOTEST god run: distance %d m, laps %d, speed %.1f m/s, coins %d, close calls %d, items on track %d" % [
+			int(dist), lap, speed, coins, close_calls, planet.items.size()])
+		print("AUTOTEST kinds seen: ", ", ".join(_test["kinds"].keys()))
+		# Swipe input check
+		var got := []
+		swipe.action.connect(func(dir): got.append(dir))
+		for deg in [0, 30, 45, 60, 90, 135, 180, 270]:
+			var a := deg_to_rad(deg)
+			var t0 := InputEventScreenTouch.new()
+			t0.pressed = true
+			t0.position = Vector2(360, 900)
+			swipe._input(t0)
+			var dr := InputEventScreenDrag.new()
+			dr.position = t0.position + Vector2(cos(a), -sin(a)) * 80.0
+			swipe._input(dr)
+			var t1 := InputEventScreenTouch.new()
+			t1.pressed = false
+			t1.position = dr.position
+			swipe._input(t1)
+		print("AUTOTEST swipes 0/30/45/60/90/135/180/270 deg -> ", got.slice(got.size() - 8))
+		_test["phase"] = "real"
+	elif _test["phase"] == "real":
+		god = false
+		start_run()
+		var t := 0
+		while state == "run" and t < 60 * 120:
+			step(dt)
+			t += 1
+		print("AUTOTEST real run (no input): state %s after %.1f s, distance %d m" % [state, t / 60.0, int(dist)])
+		get_tree().quit()

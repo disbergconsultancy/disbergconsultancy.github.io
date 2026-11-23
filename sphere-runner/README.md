@@ -1,34 +1,40 @@
-# Sphere Runner — concept prototype (Godot 4)
+# Sphere Runner (Godot 4.7)
 
-Endless runner on a rotating globe. Plain cubes only — this is for testing the feel, not the look.
+Native version of the Sphere Runner prototype. The web prototype in `../sphere-runner-web/` is the
+design reference; this project ports it in phases.
 
-## Run it
-1. Install **Godot 4.3 or newer** (standard build, not .NET): https://godotengine.org/download
-2. Godot → **Import** → select `sphere-runner/project.godot` → **Run (F5)**.
-3. Desktop controls: arrows / WASD, Space = jump/start. Mouse drag works as a swipe.
+## Open and run
+1. Godot **4.7.2** (standard build). Import → select `sphere-runner/project.godot` → Run (F5).
+2. Desktop controls: arrows / WASD (hold Up to float), mouse drag works as a swipe, Enter = tap.
+3. Phone: Android one-click deploy (Remote Deploy) or iOS export to Xcode on a Mac.
 
-## Run it on a phone
-- **Android:** Editor → *Manage Export Templates* → download. Set the Android SDK path in Editor Settings, add an Android export preset, plug in the phone (USB debugging on) and use the one-click **Remote Deploy** button.
-- **iPhone:** add an iOS export preset, export an Xcode project on a Mac, open it in Xcode, select your phone and run (needs an Apple ID / Developer account for signing).
+## Structure
+Everything is built in code (no editor scenes besides `scenes/main.tscn`), so it stays readable.
 
-## Controls (touch)
-| Swipe | Action |
+| Script | What it does |
 |---|---|
-| left / right | switch lane |
-| up | jump |
-| down | slide (or slam down while in the air) |
-| tap | start / restart |
+| `scripts/config.gd` | Autoload `Config`: all tuning (speeds, physics, difficulty, obstacle kinds, colours) |
+| `scripts/main.gd` | Game state, run loop: movement, collisions, close calls, combo, score, camera, save |
+| `scripts/planet.gd` | The rotating globe, road, scenery, and placing items on the curve |
+| `scripts/spawner.gd` | Obstacle patterns (rows, ramps/roofs, corridor, zigzag, glowing floor, jump-slide, movers) and wave/calm pacing |
+| `scripts/item.gd` | One obstacle/coin/surface: logical box for collisions + visual parts |
+| `scripts/character.gd` | Block figure on a humanoid joint layout with blended poses (run, jump, float, slam, slide, land, crash) |
+| `scripts/swipe_input.gd` | Swipes (vertical-friendly zones), taps, double-taps, hold |
+| `scripts/hud.gd` | HUD, start menu, crash screen |
 
-## Obstacles
-| Colour | Shape | How to pass |
-|---|---|---|
-| Orange | low block | jump |
-| Purple | floating bar | slide under |
-| Red | tall wall | switch lane |
-| Yellow | small cube | coin — collect |
+## Self-test (headless)
+```
+godot --headless --path sphere-runner -- --autotest
+```
+Simulates a 2-minute invincible run (reports distance, laps, coins, close calls, obstacle kinds),
+checks swipe directions, then a real run without input (must crash).
 
-## How it works
-The player never moves forward. The globe rotates toward the camera, so obstacles rise over the horizon. Rows are spawned just past the horizon and deleted once they're behind you, so the run is endless. One lap = one full turn of the globe (~188 m); each lap adds speed.
+Screenshot at N seconds into a run: `godot --path sphere-runner -- --shot out.png 8` (add `menu` for the menu).
 
-## Tuning
-All feel parameters are constants at the top of `main.gd`: globe size (`TRACK_R`), speed curve, jump height, gravity, gap between rows, spawn distance, swipe threshold.
+## Port status
+- **Phase 1 (done):** core run: planet, lanes, jump/float/slam/slide/air dash/jump buffer, ramps and roofs,
+  all obstacle patterns, glowing floors, movers, coins, close calls, combo, waves and calm stretches,
+  difficulty, laps, block character, HUD, menu, best score.
+- **Phase 2:** power-ups, the three characters and their abilities, sound.
+- **Phase 3:** planets and planet hop, boss chase, boss test.
+- **Phase 4:** XP, levels and skill trees, core shop, settings, balance stats.
