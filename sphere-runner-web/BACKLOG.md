@@ -17,7 +17,7 @@ The Godot project (`sphere-runner/`) is the main version; the web prototype stay
 ### 1. Boss system: unique bosses with signature moves (IN PROGRESS)
 **Built (Godot):** data model per boss (archetype, base throws, signature moves, rate), phases (base / signature
 unlocked at 30% / enraged at 80%), threat budget (move costs), and all eight signature moves:
-Stone Golem: Vine sweep; Sand Colossus: Rolling boulder, Meteor shower; Ice Titan: Ice lane, Quake rhythm, Decoy;
+Minotaur (was Stone Golem): Vine sweep; Sand Wyvern (was Sand Colossus): Rolling boulder, Meteor shower; Ice Titan: Ice lane, Quake rhythm, Decoy;
 Magma Giant: Lava trail, Quake rhythm, Decoy, Gate slam (at the final pass). Fairness check with a bot (10 chases per
 boss; all bosses 10/10). The check found and fixed an impossible attack (a 2-lane wall with the middle lane open
 covered all three lanes, also fixed in the web prototype) and a quake rhythm overlapping the next throw; combos keep
@@ -88,7 +88,10 @@ A boss is **composed from parts**, all data-driven:
 - **Boss earlier in a world**: let a boss appear in the distance before the final lap to set the stage.
 - **Real models**: started. The three heroes use KayKit models (CC0) with KayKit animation clips and our toon layer
   (menu setting "Hero models"). Still to do: own colours per hero, more clips (a real slide, an air-jump flip clip),
-  boss models, and eventually commissioned heroes with their own identity.
+  and eventually commissioned heroes with their own identity.
+  Bosses use 3D models (Tripo) animated in code: breathing, waddle or flapping, throw wind-up, stomp squash,
+  red pulse when enraged, a leap over the runner at the final pass. Check the Tripo licence before release;
+  rigged versions would allow real attack animations.
 
 ## Parked
 - **Monetisation**: premium, ads or cosmetics only. To decide before building the cosmetics economy.

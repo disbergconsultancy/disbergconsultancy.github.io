@@ -17,6 +17,9 @@ var _end_t := 0.0
 var _wind_t := -1.0
 var _flash_t := 0.0
 var _body: Node3D
+var _model: Node3D            # 3D boss model (or null: the block boss)
+var _overlay := StandardMaterial3D.new()   # flash and enrage tint on the model
+var _anim_t := 0.0
 var _mats: Array[StandardMaterial3D] = []
 var _rng := RandomNumberGenerator.new()
 var _last_phase := 0
@@ -55,6 +58,10 @@ func _build() -> void:
 	var b: Dictionary = Config.THEME["boss"]
 	_body = Node3D.new()      # pivot at the ground: leans and hops happen here
 	add_child(_body)
+	_model = null
+	if Config.hero_models and b.has("model"):
+		_build_model(b)
+		return
 	var body_mat := _mat(b["body"], b["glow"] * 0.3)
 	var s := Config.BOSS_SIZE
 	_box(Vector3(s, s, s), body_mat, Vector3(0, Config.BOSS_LIFT + s / 2.0, 0))
@@ -63,6 +70,69 @@ func _build() -> void:
 	var eye := _mat(b["eye"], 1.0)
 	for sx in [-1.0, 1.0]:      # eyes on the face toward the runner (+Z)
 		_box(Vector3(2.4, 1.5, 0.4), eye, Vector3(sx * 2.9, Config.BOSS_LIFT + s * 0.68, s / 2.0 + 0.1))
+
+
+## A boss model (static mesh, animated in code): 1 m tall in the file, scaled to model_h,
+## facing +Z (the runner). Tint for untextured models, glowing cracks for hot ones.
+func _build_model(b: Dictionary) -> void:
+	_model = load("res://assets/bosses/%s.glb" % b["model"]).instantiate()
+	_model.scale = Vector3.ONE * b.get("model_h", 20.0)
+	_model.position.y = b.get("hover", 0.0)
+	_body.add_child(_model)
+	_overlay.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_overlay.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_overlay.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_overlay.albedo_color = Color(0, 0, 0, 0)
+	for mi in _model.find_children("*", "MeshInstance3D", true, false):
+		var src: BaseMaterial3D = mi.mesh.surface_get_material(0)
+		var m: StandardMaterial3D = src.duplicate() if src else StandardMaterial3D.new()
+		if b.has("tint"):
+			m.albedo_color = b["tint"]
+			m.vertex_color_use_as_albedo = false
+		m.roughness = 0.8
+		if b["glow"] > 0.3 and m.albedo_texture:      # lava cracks glow
+			m.emission_enabled = true
+			m.emission_texture = m.albedo_texture
+			m.emission = Color.WHITE
+			m.emission_energy_multiplier = b["glow"] * 0.4
+		mi.material_override = m
+		mi.material_overlay = _overlay
+
+
+## Model animation on top of the body moves (throw lean, stomp hop, defeat fall):
+## breathing, a heavy waddle (or flapping for a flyer), squash on stomps, a red pulse
+## when enraged, a white flash when defeated, and a leap over the runner at the final pass.
+func _animate_model(dt: float) -> void:
+	_anim_t += dt * (1.5 if boss_phase() == 3 and phase == "fight" else 1.0)
+	var b: Dictionary = Config.THEME["boss"]
+	var t := _anim_t
+	var hover: float = b.get("hover", 0.0)
+	var h: float = b.get("model_h", 20.0)
+	var sx := 1.0
+	var sy := 1.0 + 0.02 * sin(t * 2.2)                    # breathing
+	if _stomp_t > 0.35:
+		sy *= 0.88                                        # crouch before the stomp
+		sx = 1.06
+	elif _stomp_t > 0.0:
+		sy *= 1.08                                        # stretch in the hop
+		sx = 0.96
+	_model.scale = Vector3(sx, sy, sx) * h
+	if hover > 0.0:                                       # flyer: bob with the wing beat, pitch a little
+		_model.position.y = hover + 0.9 * sin(t * 5.0)
+		_model.rotation = Vector3(0.08 * sin(t * 5.0 + 1.0), 0.0, 0.06 * sin(t * 1.3))
+	else:                                                 # walker: heavy waddle backwards
+		_model.rotation = Vector3(0.0, 0.08 * sin(t * 1.6), 0.05 * sin(t * 3.2))
+		var lift := 0.0
+		if phase == "fight":                              # leap over the runner at the final pass
+			var u := clampf((24.0 - ahead()) / 24.0, 0.0, 1.0)
+			lift = h * 0.55 * sin(u * PI / 2.0)
+		_model.position.y = absf(sin(t * 3.2)) * 0.5 + lift
+	var c := Color(0, 0, 0, 0)
+	if _flash_t > 0.0:
+		c = Color(1, 1, 1, 0.7)
+	elif phase == "fight" and boss_phase() == 3:
+		c = Color(1, 0.15, 0.1, 0.12 + 0.1 * sin(t * 8.0))
+	_overlay.albedo_color = c
 
 
 func _mat(c: Color, glow: float) -> StandardMaterial3D:
@@ -178,8 +248,12 @@ func update(dt: float) -> void:
 			game.on_boss_defeated()
 	elif _stomp_t > 0.0:
 		_body.position.y = -1.2 * (1.0 - (_stomp_t - 0.35) / 0.45) if _stomp_t > 0.35 else 3.5 * sin(PI * (0.35 - _stomp_t) / 0.35)
-	else:
+	elif _model == null:
 		_body.position.y = maxf(0.0, sin(Time.get_ticks_msec() / 1000.0 * 1.6)) * 0.4
+	else:
+		_body.position.y = 0.0
+	if _model:
+		_animate_model(dt)
 	_update_throws(dt)
 
 
@@ -307,7 +381,7 @@ func _pick(pool: Dictionary) -> String:
 
 # --- Signature moves ---------------------------------------------------
 
-## Rolling boulder (Sand Colossus): rolls toward you down one lane and switches to an
+## Rolling boulder (Sand Wyvern): rolls toward you down one lane and switches to an
 ## adjacent lane once. Before the switch it wobbles and a red marker shows the new lane.
 func _rolling_boulder(a: float) -> void:
 	var planet: Planet = game.planet
@@ -336,7 +410,7 @@ func _lava_trail(target: float) -> void:
 	_wind_t = 0.0
 
 
-## Vine sweep (Stone Golem): vines grow up over two lanes at slide height.
+## Vine sweep (Minotaur): vines grow up over two lanes at slide height.
 ## Answer: slide under them, or take the third lane.
 func _vine_sweep(target: float) -> void:
 	var planet: Planet = game.planet
@@ -364,7 +438,7 @@ func _vine_sweep(target: float) -> void:
 	_wind_t = 0.0
 
 
-## Meteor shower (Sand Colossus): four small meteors, thrown one after another every 0.35 s,
+## Meteor shower (Sand Wyvern): four small meteors, thrown one after another every 0.35 s,
 ## never twice in a row in the same lane. Each has a normal throw's warning. Answer: weave.
 func _meteor_shower() -> void:
 	var lane: int = [-1, 0, 1][_rng.randi() % 3]
@@ -426,7 +500,7 @@ func _update_gate() -> void:
 	var planet: Planet = game.planet
 	var a := ahead()
 	var phi: float = game.angle + a / planet.radius
-	if _gate_state == 0 and a < 34.0 and a > 20.0:
+	if _gate_state == 0 and progress() > 0.6 and a < 22.0 and a > 15.0:
 		_gate_state = 1
 		_gate_gap = [-1, 0, 1][_rng.randi() % 3]
 		_place_gate_legs()
@@ -435,12 +509,12 @@ func _update_gate() -> void:
 		game.hud.flash("GATE SLAM!")
 		game.shake = maxf(game.shake, 0.4)
 		game.sfx.play("smash")
-	elif _gate_state == 1 and a < 27.0:
+	elif _gate_state == 1 and a < 15.0:
 		_gate_state = 2                  # announce the shift ~1 s before it happens
 		_gate_gap = _gate_gap + (1 if _gate_gap == -1 else -1 if _gate_gap == 1 else [-1, 1][_rng.randi() % 2])
 		_gate_mark.x = Config.lane_x(_gate_gap)
 		game.hud.pop("THE GAP MOVES!")
-	elif _gate_state == 2 and a < 19.0:
+	elif _gate_state == 2 and a < 9.0:
 		_gate_state = 3
 		for it in _gate:
 			planet.hide_item(it)

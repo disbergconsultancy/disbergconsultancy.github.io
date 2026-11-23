@@ -124,7 +124,10 @@ func _ready() -> void:
 		var i := args.find("--reel")
 		_test = {"phase": "reel", "dir": args[i + 1], "cam": "game" if "game" in args else "close", "idle": "idle" in args}
 		for a in args:
-			if a.begins_with("char="):
+			if a.begins_with("boss="):     # the last seconds of a boss chase (gameplay camera)
+				_test["boss"] = int(a.substr(5))
+				_test["cam"] = "game"
+			elif a.begins_with("char="):
 				Config.character = a.substr(5)
 				character.build(Config.char_def())
 	elif "--autotest" in args:
@@ -1289,6 +1292,15 @@ func _reel(dt: float) -> void:
 	if _test["idle"]:
 		seq = {}
 		total = 5.0
+	elif _test.has("boss"):
+		seq = {}
+		total = 6.0
+		god = true
+		start_boss_test(_test["boss"])
+		var guard := 0
+		while guard < 60 * 120 and not (boss.phase == "fight" and boss.dist - boss.done < 170.0):
+			step(dt)
+			guard += 1
 	else:
 		god = true
 		start_run()
@@ -1314,12 +1326,13 @@ func _reel(dt: float) -> void:
 						god = false
 						pw["invuln"] = 0.0
 						crash()
-		if state == "run":
+		if state == "run" and not _test.has("boss"):
 			for it in planet.items:       # empty track: only the moves
 				if it.alive:
 					planet.hide_item(it)
 			speed = 16.0
 		step(dt)
+		_update_debris(dt)
 		_render(dt)
 		if _test["cam"] == "close":    # side view, close to the runner
 			var r := planet.radius

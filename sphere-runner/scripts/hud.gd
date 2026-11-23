@@ -284,7 +284,7 @@ func _build_menu() -> void:
 	sound_toggle.toggled.connect(func(on): Config.sound = on)
 	box.add_child(sound_toggle)
 	var models := CheckButton.new()
-	models.text = "Hero models"
+	models.text = "3D models (heroes, bosses)"
 	models.button_pressed = Config.hero_models
 	models.add_theme_font_size_override("font_size", 26)
 	models.toggled.connect(func(on):
