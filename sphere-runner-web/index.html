@@ -406,7 +406,8 @@ const BOSS_SIZE = 14, BOSS_LOOP_M = 2 * Math.PI * 22;
 let bossObj = null, bossPhase = 'none';          // none | intro | fight | down
 let worldStart = 0, worldLap = 0;
 let bossDist = 0, bossDone = 0, attackT = 0, stompT = 0, bossEndT = 0, bossKills = 0;
-const bossX = () => -(TRACK_HALF + 2.5 + BOSS_SIZE / 2);       // beside the track, on the left
+const bossX = () => 0;                                          // in the middle of the track, straddling it
+const BOSS_LIFT = 6;                                            // body height above the track: you run underneath
 const bossProgress = () => (bossDist ? THREE.MathUtils.clamp(bossDone / bossDist, 0, 1) : 0);
 // Distance ahead of the runner: it stays near the horizon (throwing) for most of the chase,
 // then you close the gap fast in the last ~20% and run past it.
@@ -420,11 +421,17 @@ function buildBoss(th) {
   const b = th.boss, g = new THREE.Group(), mats = [];
   const M = (c, e = 0) => { const m = new THREE.MeshLambertMaterial({ color: c, flatShading: true, emissive: e ? c : 0x000000, emissiveIntensity: e }); m.userData = { e, c: e ? c : 0 }; mats.push(m); return m; };
   const body = new THREE.Group(); g.add(body);           // pivot at the ground: leans and hops happen here
-  const cube = new THREE.Mesh(boxGeo, M(b.body, b.glow ? b.glow * 0.3 : 0));
-  cube.scale.setScalar(BOSS_SIZE); cube.position.y = BOSS_SIZE / 2; cube.castShadow = true; body.add(cube);
+  // A block raised on two legs that stand beside the track, like a gate you run under.
+  const bodyMat = M(b.body, b.glow ? b.glow * 0.3 : 0);
+  const cube = new THREE.Mesh(boxGeo, bodyMat);
+  cube.scale.setScalar(BOSS_SIZE); cube.position.y = BOSS_LIFT + BOSS_SIZE / 2; cube.castShadow = true; body.add(cube);
+  for (const sx of [-1, 1]) {
+    const leg = new THREE.Mesh(boxGeo, bodyMat);
+    leg.scale.set(2.4, BOSS_LIFT + 0.5, 3.2); leg.position.set(sx * (TRACK_HALF + 1.7), (BOSS_LIFT + 0.5) / 2, 0); leg.castShadow = true; body.add(leg);
+  }
   for (const sx of [-1, 1]) {                              // eyes on the face toward the runner (+Z)
     const eye = new THREE.Mesh(boxGeo, M(b.eye, 1));
-    eye.scale.set(2.4, 1.5, 0.4); eye.position.set(sx * 2.9, BOSS_SIZE * 0.68, BOSS_SIZE / 2 + 0.1); body.add(eye);
+    eye.scale.set(2.4, 1.5, 0.4); eye.position.set(sx * 2.9, BOSS_LIFT + BOSS_SIZE * 0.68, BOSS_SIZE / 2 + 0.1); body.add(eye);
   }
   planet.add(g);
   return { g, body, mats, flashT: 0, windT: -1, windDur: 1 };
@@ -567,7 +574,7 @@ function updateThrows(dt) {
     const u = f.t / f.dur;
     if (!bossObj) f.t = f.dur;
     if (f.t < f.dur) {
-      const phiB = angle + bossAhead() / R, xB = bossX(), yB = BOSS_SIZE * 0.85;
+      const phiB = angle + bossAhead() / R, xB = bossX(), yB = BOSS_LIFT + BOSS_SIZE * 0.5;
       for (const p of it.parts) {
         const tphi = it.phi + p.dm / R, tx = it.x + (p.dx || 0);
         place(p.obj, phiB + (tphi - phiB) * u, xB + (tx - xB) * u, yB + (p.y - yB) * u + 8 * Math.sin(Math.PI * u));
