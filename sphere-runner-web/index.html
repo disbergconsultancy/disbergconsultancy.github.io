@@ -63,6 +63,11 @@
   .go.small { font-size: 13px; padding: 9px 4px; background: rgba(255,255,255,.12); }
   #skLearn:disabled { opacity: .35; }
   .charpick small { display: block; font-size: 11px; font-weight: 600; opacity: .9; }
+  #bossbar { position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 64px); display: none;
+    text-align: center; font-weight: 900; font-size: 15px; letter-spacing: 1px; pointer-events: none; text-shadow: 0 2px 4px rgba(0,0,0,.7); }
+  #bossbar .segs { display: flex; gap: 4px; justify-content: center; margin-top: 4px; }
+  #bossbar .segs i { width: 34px; height: 10px; border-radius: 3px; background: rgba(0,0,0,.4); display: block; }
+  #bossbar .segs i.on { background: #ff3a3a; box-shadow: 0 0 6px #ff3a3a; }
   #pauseBtn { position: fixed; right: calc(env(safe-area-inset-right) + 14px); bottom: calc(env(safe-area-inset-bottom) + 14px);
     width: 44px; height: 44px; border-radius: 22px; border: 0; background: rgba(0,0,0,.3); color: #fff; font-size: 18px; font-weight: 800; }
   .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -94,6 +99,7 @@
 <body>
 <div class="hud"><div id="score">0</div><div id="info"></div></div>
 <div id="fade"></div>
+<div id="bossbar"></div>
 <div id="combo"></div>
 <div id="flash"></div>
 <div id="pop"></div>
@@ -116,7 +122,7 @@
       <div class="sw" style="background:#5a6b8c"></div><div>Long block: take the ramp and run on top</div>
       <div class="sw" style="background:#ffd91a"></div><div>Coin · close call = bonus</div>
       <div class="sw" style="background:linear-gradient(90deg,#00e5ff 25%,#3dff6e 25% 50%,#fff 50% 75%,#ff4fa3 75%)"></div><div>Power-ups: magnet · shield · orbit · x2</div>
-      <div class="sw" style="background:#7df9ff"></div><div>Hop gate (every 2 laps): launch to a new planet</div>
+      <div class="sw" style="background:#7df9ff"></div><div>Boss gate (end of each world): loop around the boss to beat it, then hop to the next planet</div>
     </div>
     <p style="font-size:13px">Keep coins and close calls coming for a <b>combo</b>. Hold your finger after a jump to <b>float</b>. Switch lanes in the air for a quick <b>air dash</b>.</p>
     </details>
@@ -203,7 +209,7 @@ const DIFF = {
 };
 const P = () => DIFF[opts.diff] || DIFF.medium;
 const SHRINK_FACTOR = 0.85, MIN_R = 12, SHRINK_TIME = 1.5;
-const HOP_TIME = 2.6, HOP_H = 14, HOP_EVERY_LAPS = 2;
+const HOP_TIME = 2.6, HOP_H = 14;
 // Pacing: a wave of obstacles, then a calm stretch of coins.
 const WAVE_M = { easy: 220, medium: 260, hard: 300 }, CALM_M = 70;
 // Three play styles: same hitbox, different trait, ability and trade-off.
@@ -388,6 +394,246 @@ function box(w, h, d, color, opacity = 1) {
 // World: a globe that rotates around the X axis. The player sits on top.
 // Anything on the globe is placed by (phi = globe-local angle, x = lane offset, y = height).
 // =====================================================================
+// =====================================================================
+// Boss arena: at the end of every world you loop around a giant boss.
+// The track becomes a flat ring around the boss with the same lanes, moves
+// and collision rules. Each completed loop damages the boss; a hit ends the run.
+// Attacks keep the colour code: red = switch lane, orange = jump, purple = slide.
+// =====================================================================
+const ARENA_R = 22;
+const AY = new THREE.Vector3(0, 1, 0);
+let mode = 'planet';                 // 'planet' | 'arena'
+let arena = null, bossObj = null;
+let worldStart = 0, worldLap = 0, gatePhi = 0, gatePlaced = false, hopTarget = 'planet';
+let arenaStart = 0, bossLoops = 0, bossHp = 0, nextAttack = 0, stompT = 0, bossState = 'none', bossEndT = 0, bossKills = 0;
+const shock = { active: false, r: 0, mesh: null };
+const worldGroup = () => (mode === 'arena' ? arena : planet);
+
+function buildArena(th) {
+  arena = new THREE.Group();
+  arena.position.set(-R, R, 0);
+  scene.add(arena);
+  const ground = new THREE.Mesh(new THREE.CylinderGeometry(R + 70, R + 70, 1, 64), flat(th.ground[1]));
+  ground.position.y = -0.55; ground.receiveShadow = true; arena.add(ground);
+  const plaza = new THREE.Mesh(new THREE.CylinderGeometry(R - TRACK_HALF - 0.6, R - TRACK_HALF - 0.6, 0.3, 64), flat(th.ground[2]));
+  plaza.position.y = -0.1; arena.add(plaza);
+  const ring = (r0, r1, mtl, y) => {
+    const m = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 160, 1), mtl);
+    m.rotation.x = -Math.PI / 2; m.position.y = y; m.receiveShadow = true; arena.add(m); return m;
+  };
+  ring(R - TRACK_HALF, R + TRACK_HALF, flat(th.track), 0.01);
+  const curbMat = flat(th.curb, th.name === 'EMBER' ? 0.8 : 0);
+  ring(R - TRACK_HALF - 0.3, R - TRACK_HALF, curbMat, 0.08);
+  ring(R + TRACK_HALF, R + TRACK_HALF + 0.3, curbMat, 0.08);
+  // Lane dashes and a ring of standing stones give a sense of speed.
+  const n = Math.floor((Math.PI * 2 * R) / 3);
+  for (let i = 0; i < n; i++) for (const side of [-0.5, 0.5]) {
+    const d = new THREE.Mesh(boxGeo, flat(th.dash, th.name === 'EMBER' ? 0.6 : 0));
+    d.scale.set(0.1, 0.03, 1.2);
+    arena.add(d); place(d, (i / n) * Math.PI * 2, side * LANE_W, 0.03);
+  }
+  for (let i = 0; i < 28; i++) {
+    const h = 2 + ((i * 37) % 7);
+    const stoneCols = [th.ground[2], th.curb, th.ground[0]];
+    const st = new THREE.Mesh(boxGeo, flat(stoneCols[i % 3]));
+    st.scale.set(1.6, h, 1.6); st.castShadow = true;
+    arena.add(st); place(st, (i / 28) * Math.PI * 2, TRACK_HALF + 4 + (i % 3) * 2, h / 2);
+  }
+  shock.mesh = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.5, 96, 1, true),
+    new THREE.MeshLambertMaterial({ color: th.boss.wave, emissive: th.boss.wave, emissiveIntensity: 0.9, side: THREE.DoubleSide, transparent: true, opacity: 0.85 }));
+  shock.mesh.position.y = 0.25; shock.mesh.visible = false; shock.active = false;
+  arena.add(shock.mesh);
+}
+
+// The boss: a giant block figure standing in the middle of the ring, facing the runner (+X).
+function buildBoss(th) {
+  const b = th.boss, g = new THREE.Group(), mats = [];
+  const M = (c, e = 0) => { const m = new THREE.MeshLambertMaterial({ color: c, flatShading: true, emissive: e ? c : 0x000000, emissiveIntensity: e }); m.userData = { e, c: e ? c : 0 }; mats.push(m); return m; };
+  const bodyM = M(b.body), accM = M(b.accent, b.glow || 0), eyeM = M(b.eye, 1);
+  const add = (parent, w, h, d, m, x, y, z) => { const o = new THREE.Mesh(boxGeo, m); o.scale.set(w, h, d); o.position.set(x, y, z); parent.add(o); return o; };
+  const body = new THREE.Group(); g.add(body);
+  for (const s of [-1, 1]) { add(body, 4, 8, 4, bodyM, 0, 4, s * 3.6); add(body, 5, 1.6, 5, accM, 0.4, 0.8, s * 3.6); }
+  add(body, 9, 11, 13, bodyM, 0, 13.5, 0);                       // torso
+  add(body, 9.6, 2.6, 13.6, accM, 0, 19, 0);                     // shoulder band
+  add(body, 1, 5, 6, accM, 4.6, 13, 0);                          // chest plate (facing the runner)
+  const head = new THREE.Group(); head.position.set(0, 20.4, 0); body.add(head);
+  add(head, 6, 5, 6, bodyM, 0, 2.5, 0);
+  for (const s of [-1, 1]) add(head, 0.5, 1.1, 1.6, eyeM, 3.05, 3, s * 1.4);
+  add(head, 6.6, 1.2, 6.6, accM, 0, 5.4, 0);
+  const arms = [];
+  for (const s of [-1, 1]) {
+    const sh = new THREE.Group(); sh.position.set(0, 18, s * 8.6); body.add(sh);
+    add(sh, 3.2, 9, 3.2, bodyM, 0, -4.5, 0);
+    add(sh, 4.8, 4.8, 4.8, accM, 0, -10.5, 0);                   // fist
+    arms.push({ g: sh, t: -1, dur: 1 });
+  }
+  body.scale.setScalar(0.8);
+  // Stands a little ahead of the ring centre (still clear of the track) so it sits in view, facing the camera.
+  g.position.set(-R + 4, R, -8);
+  g.rotation.y = -0.59;
+  scene.add(g);
+  return { g, body, head, arms, mats, flashT: 0 };
+}
+
+function enterArena() {
+  mode = 'arena';
+  planet.visible = false;
+  R = targetR = shrinkFrom = ARENA_R; shrinkT = 1;
+  buildArena(theme);
+  bossObj = buildBoss(theme);
+  arenaStart = angle; bossLoops = 0; bossHp = theme.bossLoops; bossState = 'fight'; stompT = 0;
+  nextAttack = angle + 34 / R;
+  flash(theme.boss.name);
+  sfx.roar();
+  $('bossbar').style.display = 'block';
+  updateBossBar();
+}
+function exitArena() {
+  if (arena) { scene.remove(arena); arena = null; }
+  if (bossObj) { scene.remove(bossObj.g); bossObj = null; }
+  shock.active = false;
+  mode = 'planet'; planet.visible = true; bossState = 'none';
+  $('bossbar').style.display = 'none';
+}
+function updateBossBar() {
+  const max = theme.bossLoops;
+  let segs = '';
+  for (let i = 0; i < max; i++) segs += `<i class="${i < bossHp ? 'on' : ''}"></i>`;
+  $('bossbar').innerHTML = `<div>${theme.boss.name}</div><div class="segs">${segs}</div>`;
+}
+
+// ---------- Attacks
+function newDrop() { return { t: 0, dur: 0.55, h: 16 }; }
+function markLanes(phi, lanes, list) {
+  for (const l of lanes) list.push(addItem('MARK', phi, LX(l), { w: LANE_W * 0.9, len: 2.6 }));
+}
+function swingArm(i, dur) { const a = bossObj.arms[i]; a.t = 0; a.dur = dur; }
+function attackAt(kind, phi) {
+  const marks = [];
+  if (kind === 'smash') {                     // red fist on one lane: switch lanes
+    const l = pick([-1, 0, 1]);
+    markLanes(phi, [l], marks);
+    addItem('FIST', phi, LX(l), { w: 2.0, len: 2.0, extra: { drop: newDrop(), marks } });
+    const free = pick([-1, 0, 1].filter(x => x !== l));
+    if (Math.random() < 0.6) coinLine(phi, free, -3, 3);
+    swingArm(0, 0.85);
+  } else if (kind === 'block') {              // red wall over two lanes: take the open one
+    const open = pick([-1, 0, 1]), lanes = [-1, 0, 1].filter(x => x !== open);
+    markLanes(phi, lanes, marks);
+    addItem('BLOCK', phi, (LX(lanes[0]) + LX(lanes[1])) / 2, { w: LANE_W * 1.9, len: 1.6, extra: { drop: newDrop(), marks } });
+    coinLine(phi, open, -3, 3);
+    swingArm(1, 0.85);
+  } else {                                    // an arm across the whole track: jump (low) or slide (high)
+    const low = kind === 'sweepLow';
+    markLanes(phi, [-1, 0, 1], marks);
+    addItem(low ? 'SWEEPLOW' : 'SWEEPHIGH', phi, 0, { w: TRACK_HALF * 2, len: 1.4, extra: { drop: newDrop(), marks } });
+    if (low) coinArc(phi, pick([-1, 0, 1]), 0); else coinLine(phi, pick([-1, 0, 1]), -2, 2, 0.1, 1);
+    swingArm(0, 0.85); swingArm(1, 0.85);
+  }
+}
+function scheduleAttacks() {
+  if (bossState !== 'fight') return;
+  const lvl = bossLoops, last = lvl >= theme.bossLoops - 1;
+  while (nextAttack < angle + 34 / R) {
+    const r = Math.random() * (100 + 8 * lvl);
+    let kind = r < 32 ? 'smash' : r < 54 ? 'block' : r < 68 ? 'sweepLow' : r < 82 ? 'sweepHigh' : 'stomp';
+    if (kind === 'stomp') {
+      if (stompT <= 0 && !shock.active) { stompT = 1.1; sfx.roar(); }
+      else kind = 'smash';
+    }
+    if (kind !== 'stomp') attackAt(kind, nextAttack);
+    // Later loops: combos (a second attack right behind the first). The last loop is "enraged".
+    if (lvl >= 1 && Math.random() < (last ? 0.45 : 0.25)) attackAt(pick(['smash', 'block']), nextAttack + 9 / R);
+    nextAttack += Math.max(13, speed * (1.15 - 0.08 * lvl - (last ? 0.1 : 0))) / R;
+  }
+}
+
+function bossHit() {
+  bossHp = Math.max(0, bossHp - 1);
+  bossObj.flashT = 0.35;
+  shake = Math.max(shake, 0.35);
+  sfx.bosshit();
+  const b = Math.round(100 * mult()); pts += b;
+  updateBossBar();
+  if (bossHp <= 0) {
+    bossState = 'down'; bossEndT = 1.8; bossKills++;
+    const bonus = Math.round(500 * mult()); pts += bonus;
+    flash(theme.boss.name + '\nDEFEATED!');
+    pop('+' + bonus);
+    sfx.victory();
+    for (const it of items) if (HAZARDS.has(it.kind) || it.kind === 'MARK') hideItem(it);
+    shock.active = false; shock.mesh.visible = false; stompT = 0;
+  } else {
+    pop(`BOSS HIT! ${theme.bossLoops - bossHp}/${theme.bossLoops}  +${b}`);
+    if (bossHp === 1) flash('LAST LOOP!');
+  }
+}
+
+function updateBoss(dt) {
+  if (!bossObj) return;
+  const B = bossObj, t = performance.now() / 1000;
+  // Flash white when hit.
+  if (B.flashT > 0) B.flashT -= dt;
+  for (const m of B.mats) {
+    if (B.flashT > 0) { m.emissive.setHex(0xffffff); m.emissiveIntensity = 0.8; }
+    else { m.emissive.setHex(m.userData.c); m.emissiveIntensity = m.userData.e; }
+  }
+  // Arms: wind up, then slam when the attack lands.
+  for (const a of B.arms) {
+    if (a.t < 0) { a.g.rotation.z += (0 - a.g.rotation.z) * Math.min(1, dt * 3); continue; }
+    a.t += dt;
+    const u = a.t / a.dur;
+    a.g.rotation.z = u < 0.65 ? 2.6 * (u / 0.65) : u < 0.8 ? 2.6 - 1.5 * ((u - 0.65) / 0.15) : 1.1;
+    if (u > 1.4) a.t = -1;
+  }
+  // Stomp: crouch, jump, land -> shockwave.
+  if (stompT > 0) {
+    stompT -= dt;
+    B.body.position.y = stompT > 0.45 ? -1.5 * (1 - (stompT - 0.45) / 0.65) : stompT > 0.15 ? 4 * Math.sin(Math.PI * (0.45 - stompT) / 0.3) : 0;
+    if (stompT <= 0) {
+      B.body.position.y = 0;
+      shock.active = true; shock.r = 9; shock.mesh.visible = true;
+      shake = Math.max(shake, 0.4); sfx.thud();
+    }
+  } else if (bossState === 'fight') {
+    B.body.position.y = Math.sin(t * 1.6) * 0.25;
+    B.head.rotation.y = Math.sin(t * 0.7) * 0.15;
+  }
+  if (shock.active) {
+    shock.r += 13 * dt;
+    shock.mesh.scale.set(shock.r, 1, shock.r);
+    // Hits you if it passes under your feet while you are on the ground.
+    if (Math.abs(shock.r - (R + px)) < 0.55 && py < 0.5 && pw.orbit <= 0 && hopT <= 0) crash(null);
+    if (shock.r > R + TRACK_HALF + 4) { shock.active = false; shock.mesh.visible = false; }
+  }
+  // Defeat: the boss sinks and topples, then you hop to the next planet.
+  if (bossState === 'down') {
+    bossEndT -= dt;
+    B.body.position.y -= dt * 7;
+    B.body.rotation.z += dt * 0.5;
+    if (Math.random() < 0.3) shake = Math.max(shake, 0.2);
+    if (bossEndT <= 0 && hopT <= 0) { bossState = 'gone'; startHop('planet'); }
+  }
+}
+
+// Falling attacks: they drop from the sky onto their red markers, then stay as obstacles.
+function updateDrops(dt) {
+  for (const it of items) {
+    const d = it.drop;
+    if (!d || d.t >= d.dur) continue;
+    d.t = Math.min(d.dur, d.t + dt);
+    const u = d.t / d.dur;
+    it.dropY = d.h * (1 - u * u);
+    placeItem(it);
+    if (d.t >= d.dur) {
+      it.dropY = 0; placeItem(it);
+      if (it.marks) for (const m of it.marks) hideItem(m);
+      shake = Math.max(shake, 0.2); sfx.thud();
+      if (it.alive) burst(it, 0x9a8a7a);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------
 // Theme kit building blocks: low-poly shapes and flat-shaded materials.
 // ---------------------------------------------------------------------
@@ -444,16 +690,20 @@ const PROPS = {
 // Planets you hop between. Each has its own size, so the curve and lap length change.
 // ground: [low, mid, high] patch colours; water: low areas; props: { name: weight }.
 const THEMES = [
-  { name: 'MEADOW', R: 45, skyTop: 0x5f9fe6, skyBottom: 0xcfe8f7, ground: [0x6cbf5a, 0x5aa84d, 0x8a9a58], water: 0x4fa3d9, shore: 0xe3d39a,
+  { name: 'MEADOW', lapsToBoss: 2, bossLoops: 3, boss: { name: 'STONE GOLEM', body: 0x8a8f7a, accent: 0x5aa84d, eye: 0xffe14d, wave: 0xa8ff6a },
+    R: 45, skyTop: 0x5f9fe6, skyBottom: 0xcfe8f7, ground: [0x6cbf5a, 0x5aa84d, 0x8a9a58], water: 0x4fa3d9, shore: 0xe3d39a,
     track: 0x8a7a68, curb: 0xe9dfcc, dash: 0xfff6e0, sun: 0xfff1a8, cloud: 0xffffff, clouds: 12,
     props: { tree: 5, tree2: 4, pine: 4, rock: 3, house: 2, bush: 4 } },
-  { name: 'DUNES', R: 36, skyTop: 0xf0a05a, skyBottom: 0xfbe3b8, ground: [0xe8c98a, 0xdcb672, 0xc99a5a], water: 0x3fb8c0, shore: 0x9cc47a,
+  { name: 'DUNES', lapsToBoss: 2, bossLoops: 4, boss: { name: 'SAND COLOSSUS', body: 0xc9a060, accent: 0x8a5a2a, eye: 0x3fe0ff, wave: 0xffd27a },
+    R: 36, skyTop: 0xf0a05a, skyBottom: 0xfbe3b8, ground: [0xe8c98a, 0xdcb672, 0xc99a5a], water: 0x3fb8c0, shore: 0x9cc47a,
     track: 0x6e4e3e, curb: 0xc9a06a, dash: 0xffe9c2, sun: 0xffe08a, cloud: 0xfff4e0, clouds: 4,
     props: { cactus: 5, pyramid: 1, palm: 3, mesa: 2, dune: 5 } },
-  { name: 'GLACIER', R: 54, skyTop: 0x6f9fd8, skyBottom: 0xe6f2fb, ground: [0xf4fbff, 0xe2eef7, 0xcfe0ee], water: 0x9cc8e8, shore: 0xffffff,
+  { name: 'GLACIER', lapsToBoss: 3, bossLoops: 4, boss: { name: 'ICE TITAN', body: 0xbfe3ff, accent: 0x6a8caa, eye: 0x29a0ff, wave: 0x9fe8ff, glow: 0.15 },
+    R: 54, skyTop: 0x6f9fd8, skyBottom: 0xe6f2fb, ground: [0xf4fbff, 0xe2eef7, 0xcfe0ee], water: 0x9cc8e8, shore: 0xffffff,
     track: 0x5d7ea8, curb: 0xffffff, dash: 0xe6f6ff, sun: 0xffffff, cloud: 0xffffff, clouds: 16,
     props: { spike: 4, snowpine: 5, igloo: 1, iceRock: 3, snowman: 1 } },
-  { name: 'EMBER', R: 30, skyTop: 0x1a1024, skyBottom: 0x5a2a3a, ground: [0x4a3030, 0x3a2626, 0x5a3a32], water: 0xff5a1f, shore: 0x2a1a1a,
+  { name: 'EMBER', lapsToBoss: 3, bossLoops: 5, boss: { name: 'MAGMA GIANT', body: 0x3a2a2a, accent: 0xff5a1f, eye: 0xffc400, wave: 0xff7a2a, glow: 0.8 },
+    R: 30, skyTop: 0x1a1024, skyBottom: 0x5a2a3a, ground: [0x4a3030, 0x3a2626, 0x5a3a32], water: 0xff5a1f, shore: 0x2a1a1a,
     track: 0x2c2a30, curb: 0xff7a2a, dash: 0xff9a4a, sun: 0xff7a4a, cloud: 0x4a3a40, clouds: 8, glowWater: true,
     props: { volcano: 2, shard: 4, deadtree: 4, lava: 3, ashrock: 4 } },
 ];
@@ -528,6 +778,12 @@ const curbs = [-1, 1].map(s => {
 
 const AX = new THREE.Vector3(1, 0, 0);
 function place(obj, phi, x, yCenter) {
+  if (mode === 'arena') {      // flat ring around the boss: x = radial offset, y = height
+    const rr = R + x;
+    obj.position.set(rr * Math.cos(phi), yCenter, -rr * Math.sin(phi));
+    obj.quaternion.setFromAxisAngle(AY, phi);
+    return;
+  }
   const r = R + yCenter;
   obj.position.set(x, r * Math.cos(phi), -r * Math.sin(phi));
   obj.quaternion.setFromAxisAngle(AX, -phi);
@@ -872,8 +1128,13 @@ const KIND = {
   COIN:     { h: 0.45, y0: 0,  d: 0.45, color: 0xffd91a },
   POWER:    { h: 0.7, y0: 0.5, d: 0.7, color: 0xffffff },
   GATE:     { h: 5, y0: 0, d: 1.2, color: 0x7df9ff },
+  FIST:     { h: 2.6, y0: 0, d: 2.0, color: 0xd93333 },
+  BLOCK:    { h: 3.2, y0: 0, d: 1.6, color: 0xd93333 },
+  SWEEPLOW: { h: 0.9, y0: 0, d: 1.4, color: 0xff8c26 },
+  SWEEPHIGH:{ h: 1.4, y0: 1.0, d: 1.4, color: 0xd940cc },
+  MARK:     { h: 0.04, y0: 0.02, d: 2.6, color: 0xff2a2a },
 };
-const HAZARDS = new Set(['LOW', 'HIGH', 'WALL', 'MOVER', 'PIT', 'PLATFORM']);
+const HAZARDS = new Set(['LOW', 'HIGH', 'WALL', 'MOVER', 'PIT', 'PLATFORM', 'FIST', 'BLOCK', 'SWEEPLOW', 'SWEEPHIGH']);
 const POWERS = {
   magnet: { color: 0x00e5ff, time: 10, label: 'MAGNET' },
   shield: { color: 0x3dff6e, time: 0,  label: 'SHIELD' },
@@ -918,6 +1179,11 @@ function addItem(kind, phi, x, opt = {}) {
     const m = new THREE.Mesh(boxGeo, glow(k.color));
     m.scale.set(w, h, len);
     it.parts.push({ obj: m, dm: 0, y: 0.03 });
+  } else if (kind === 'MARK') {
+    // Red warning marker on the track where a boss attack will land.
+    const m = new THREE.Mesh(boxGeo, new THREE.MeshBasicMaterial({ color: 0xff2a2a, transparent: true, opacity: 0.55 }));
+    m.scale.set(w, h, len);
+    it.parts.push({ obj: m, dm: 0, y: y0 + h / 2 });
   } else if (kind === 'GATE') {
     // Glowing floor pad with an arch over the track.
     const g = new THREE.Group();
@@ -948,18 +1214,26 @@ function addItem(kind, phi, x, opt = {}) {
       it.parts.push({ obj: box(w * 0.92, 0.12, len * 0.92, 0xff5a5a), dm: 0, y: h + 0.06 });
     } else if (kind === 'MOVER') {   // white chevrons on the sides
       band(y0 + h * 0.5, 0xffffff, 0.14);
+    } else if (kind === 'FIST' || kind === 'BLOCK') {   // boss knuckles / stone bands
+      band(y0 + h - 0.15, 0x8a1a1a, 0.18); band(y0 + 0.5, 0x8a1a1a, 0.12);
+    } else if (kind === 'SWEEPLOW' || kind === 'SWEEPHIGH') {
+      // The boss's arm reaching across the track from the middle of the ring.
+      const inner = 9, armLen = R - TRACK_HALF - inner;
+      it.parts.push({ obj: box(armLen + 0.4, h * 0.9, len * 0.9, theme.boss.accent), dm: 0, y: y0 + h / 2, dx: -(R - (inner + armLen / 2)) });
+      band(y0 + h / 2, 0xffffff, 0.08);
     }
   }
-  for (const p of it.parts) planet.add(p.obj);
+  const wg = worldGroup();
+  for (const p of it.parts) wg.add(p.obj);
   placeItem(it);
   items.push(it);
   return it;
 }
 function placeItem(it) {
-  for (const p of it.parts) place(p.obj, it.phi + p.dm / R, it.x + (p.dx || 0), p.y);
+  for (const p of it.parts) place(p.obj, it.phi + p.dm / R, it.x + (p.dx || 0), p.y + (it.dropY || 0));
 }
 function removeItem(it) {
-  for (const p of it.parts) planet.remove(p.obj);
+  for (const p of it.parts) if (p.obj.parent) p.obj.parent.remove(p.obj);
 }
 function hideItem(it) { it.alive = false; for (const p of it.parts) p.obj.visible = false; }
 
@@ -1098,13 +1372,13 @@ function pickChunk() {
 function updateSpawning() {
   const ahead = Math.min(SPAWN_AHEAD_M / R, Math.PI * 0.9);
   const p = P();
-  while (nextSpawn < angle + ahead) {
-    // Hop gate at the start of every second lap.
-    const padPhi = nextPadLap * Math.PI * 2;
-    if (nextSpawn > padPhi - 45 / R) {
-      addItem('GATE', padPhi, 0, { w: TRACK_HALF * 2, len: 1.2 });
-      nextSpawn = padPhi + 20 / R;
-      nextPadLap += HOP_EVERY_LAPS;
+  if (mode === 'arena') scheduleAttacks();
+  while (mode === 'planet' && nextSpawn < angle + ahead) {
+    // Boss gate at the end of this world's laps.
+    if (!gatePlaced && nextSpawn > gatePhi - 45 / R) {
+      addItem('GATE', gatePhi, 0, { w: TRACK_HALF * 2, len: 1.2 });
+      gatePlaced = true;
+      nextSpawn = gatePhi + 20 / R;
       continue;
     }
     let name;
@@ -1141,7 +1415,7 @@ let flashT = 0, popT = 0;
 let combo = 0, comboT = 0, comboLevel = 1, floatT = 0, holding = false, dashT = 0;
 let meter = 0, abilityT = 0, abilityTotal = 0, lastTap = 0;
 let airJumps = 0, superActive = false, hangUsed = 0, smashes = 0;
-let waveLeft = 0, calmLeft = 0, nextPadLap = HOP_EVERY_LAPS, hopT = 0, hopSwapped = false, themeIdx = 0;
+let waveLeft = 0, calmLeft = 0, hopT = 0, hopSwapped = false, themeIdx = 0;
 const pw = { magnet: 0, shield: 0, orbit: 0, x2: 0, invuln: 0 };
 
 function reset() {
@@ -1152,7 +1426,9 @@ function reset() {
   combo = 0; comboT = 0; comboLevel = 1; floatT = 0; dashT = 0;
   ST = computeStats(); airJumps = 0; superActive = false; hangUsed = 0; smashes = 0;
   meter = 0; abilityT = 0; particles.forEach(p => scene.remove(p.m)); particles.length = 0;
-  waveLeft = WAVE_M[opts.diff] || 260; calmLeft = 0; nextPadLap = HOP_EVERY_LAPS; hopT = 0;
+  waveLeft = WAVE_M[opts.diff] || 260; calmLeft = 0; hopT = 0;
+  if (mode === 'arena') exitArena();
+  worldStart = 0; worldLap = 0; gatePhi = THEMES[0].lapsToBoss * Math.PI * 2; gatePlaced = false; bossKills = 0;
   angle = 0; speed = P().start; dist = 0; spawnedChunks = 0; powerIn = 90;
   lane = 0; px = 0; py = 0; vy = 0; slideT = 0; jumpBufferT = 0; grounded = true; groundY = 0;
   coins = 0; lap = 0; shake = 0; squash = 0; pts = 0; closeCalls = 0;
@@ -1204,7 +1480,7 @@ function gameOver() {
   store.set('runs_' + opts.char + '_' + opts.diff, runs.slice(-10));
   const aw = awardXP();
   $('overStats').innerHTML = `Score <b>${s}</b>${isBest ? ' &nbsp;NEW BEST!' : ''}<br>Best ${Math.max(s, best)}<br>` +
-    `Laps ${lap} &nbsp;·&nbsp; Coins ${coins}<br>Distance ${Math.floor(dist)} m &nbsp;·&nbsp; Close calls ${closeCalls}` +
+    `Laps ${lap} &nbsp;·&nbsp; Coins ${coins}<br>Distance ${Math.floor(dist)} m &nbsp;·&nbsp; Close calls ${closeCalls}<br>Bosses defeated ${bossKills}` +
     `<div style="margin-top:12px;font-size:16px"><b>+${aw.xp} XP</b> &nbsp;·&nbsp; ${CHARS[opts.char].name} Lv ${aw.p.lvl}` +
     (aw.levels ? `<div style="color:#ffd23d;font-weight:900;margin-top:4px">LEVEL UP! +${aw.levels} skill point${aw.levels > 1 ? 's' : ''}</div>` : '') +
     (aw.p.lvl < MAX_LEVEL ? `<div class="xpbar" style="margin-top:6px"><div style="width:${100 * aw.p.xp / xpForNext(aw.p.lvl)}%"></div></div>` : '') + '</div>';
@@ -1214,7 +1490,7 @@ function gameOver() {
 }
 
 function awardXP() {
-  const xp = Math.floor(dist / 4) + coins * 2 + closeCalls * 5 + smashes * 3;
+  const xp = Math.floor(dist / 4) + coins * 2 + closeCalls * 5 + smashes * 3 + bossKills * 250;
   const p = loadProg(opts.char), before = p.lvl;
   p.xp += xp;
   while (p.lvl < MAX_LEVEL && p.xp >= xpForNext(p.lvl)) { p.xp -= xpForNext(p.lvl); p.lvl++; }
@@ -1244,20 +1520,27 @@ function step(dt) {
   angle += (speed / R) * dt;
   dist += speed * dt;
   pts += speed * dt * mult();
-  planet.rotation.x = angle % (Math.PI * 2);
-
-  const newLap = Math.floor(angle / (Math.PI * 2));
-  if (newLap > lap) {
-    lap = newLap;
-    speed = Math.min(P().max, speed + LAP_BONUS);
-    if (hopT > 0) { /* the hop shows its own message */ }
-    else if (opts.shrink && R > MIN_R + 0.01) {
-      shrinkFrom = R; targetR = Math.max(MIN_R, R * SHRINK_FACTOR); shrinkT = 0;
-      flash(`LAP ${lap + 1}\nSHRINK`);
-    } else flash(`LAP ${lap + 1}`);
-    sfx.lap();
+  if (mode === 'planet') {
+    planet.rotation.x = angle % (Math.PI * 2);
+    const wl = Math.floor((angle - worldStart) / (Math.PI * 2));
+    if (wl > worldLap) {
+      worldLap = wl; lap++;
+      speed = Math.min(P().max, speed + LAP_BONUS);
+      if (hopT > 0) { /* the hop shows its own message */ }
+      else if (opts.shrink && R > MIN_R + 0.01) {
+        shrinkFrom = R; targetR = Math.max(MIN_R, R * SHRINK_FACTOR); shrinkT = 0;
+        flash(`LAP ${worldLap + 1}\nSHRINK`);
+      } else flash(worldLap + 1 >= theme.lapsToBoss ? 'FINAL LAP\nBOSS AHEAD' : `LAP ${worldLap + 1}`);
+      sfx.lap();
+    }
+  } else {
+    arena.rotation.y = -(angle % (Math.PI * 2));
+    const lp = Math.floor((angle - arenaStart) / (Math.PI * 2));
+    if (lp > bossLoops && bossState === 'fight') { bossLoops = lp; bossHit(); }
+    updateBoss(dt);
   }
-  if (shrinkT < 1) {
+  updateDrops(dt);
+  if (mode === 'planet' && shrinkT < 1) {
     shrinkT = Math.min(1, shrinkT + dt / SHRINK_TIME);
     const t = shrinkT * shrinkT * (3 - 2 * shrinkT);
     R = shrinkFrom + (targetR - shrinkFrom) * t;
@@ -1355,9 +1638,10 @@ function collide(dt) {
       placeItem(it);
     }
 
+    if (it.kind === 'MARK' || (it.drop && it.drop.t < it.drop.dur)) continue;
     const overlapZ = Math.abs(d) <= it.hd + hd;
     const overlapX = Math.abs(it.x - px) <= it.hw + hw;
-    if (it.kind === 'GATE') { if (overlapZ && hopT <= 0) { it.alive = false; startHop(); } continue; }
+    if (it.kind === 'GATE') { if (overlapZ && hopT <= 0) { it.alive = false; startHop('arena'); } continue; }
 
     // Close-call tracking for hazards the player is passing.
     if (HAZARDS.has(it.kind) && !it.passed && it.kind !== 'PLATFORM') {
@@ -1408,7 +1692,7 @@ function useAbility() {
     abilityT = 1.6;                    // just for the visual trail
   } else { abilityT = ST.abilityTime; abilityTotal = ST.abilityTime; }
 }
-const SMASHABLE = new Set(['LOW', 'HIGH', 'WALL', 'MOVER']);
+const SMASHABLE = new Set(['LOW', 'HIGH', 'WALL', 'MOVER', 'FIST', 'BLOCK', 'SWEEPLOW', 'SWEEPHIGH']);
 function meteorStrike() {
   let n = 0;
   for (const o of items) { const d = aheadM(o); if (o.alive && SMASHABLE.has(o.kind) && d > -1 && d < 9) { smashItem(o, true, false); n++; } }
@@ -1459,11 +1743,12 @@ function updateParticles(dt) {
     if (p.life <= 0) { scene.remove(p.m); particles.splice(i, 1); }
   }
 }
-function startHop() {
+function startHop(target = 'planet') {
+  hopTarget = target;
   hopT = HOP_TIME; hopSwapped = false; hopBase = py;
   pw.orbit = 0; slideT = 0; vy = 0;
   pw.invuln = HOP_TIME + 1.2;
-  flash('PLANET HOP!'); sfx.hop();
+  flash(target === 'arena' ? 'BOSS FIGHT!' : 'PLANET HOP!'); sfx.hop();
 }
 function updateHop(dt) {
   hopT = Math.max(0, hopT - dt);
@@ -1475,14 +1760,19 @@ function updateHop(dt) {
     hopSwapped = true;
     for (const it of items) removeItem(it);
     items = [];
-    themeIdx = (themeIdx + 1) % THEMES.length;
-    applyTheme(THEMES[themeIdx]);
-    R = targetR = shrinkFrom = THEMES[themeIdx].R; shrinkT = 1;
-    layoutWorld();
-    nextSpawn = angle + 30 / R;
-    spawnedChunks = 0;
-    waveLeft = WAVE_M[opts.diff] || 260; calmLeft = 0;
-    flash(THEMES[themeIdx].name);
+    if (hopTarget === 'arena') enterArena();
+    else {
+      if (mode === 'arena') exitArena();
+      themeIdx = (themeIdx + 1) % THEMES.length;
+      applyTheme(THEMES[themeIdx]);
+      R = targetR = shrinkFrom = THEMES[themeIdx].R; shrinkT = 1;
+      layoutWorld();
+      nextSpawn = angle + 30 / R;
+      spawnedChunks = 0;
+      waveLeft = WAVE_M[opts.diff] || 260; calmLeft = 0;
+      worldStart = angle; worldLap = 0; gatePhi = angle + theme.lapsToBoss * Math.PI * 2; gatePlaced = false;
+      flash(THEMES[themeIdx].name);
+    }
   }
   if (hopT <= 0) { $('fade').style.opacity = 0; py = Math.max(py, 0); vy = -5; }
 }
@@ -1565,8 +1855,14 @@ function render(dt) {
   camY += ((pw.orbit > 0 || hopT > 0 ? py * 1.1 : py * 0.6) - camY) * Math.min(1, dt * 3);
   let sx = 0, sy = 0;
   if (shake > 0) { shake = Math.max(0, shake - dt); sx = (Math.random() - 0.5) * shake; sy = (Math.random() - 0.5) * shake; }
-  camPos.set(camX + sx, R + 4 + camY + sy, 6 + camY * 0.9);
-  camLook.set(camX, R - 1.5 + camY * 0.55, -12 - camY);
+  if (mode === 'arena') {
+    // Turned toward the inside of the ring so the boss stays in view on the left.
+    camPos.set(camX + 6 + sx, R + 6.5 + camY + sy, 8 + camY * 0.6);
+    camLook.set(camX - 16, R + 5 + camY * 0.5, -12);
+  } else {
+    camPos.set(camX + sx, R + 4 + camY + sy, 6 + camY * 0.9);
+    camLook.set(camX, R - 1.5 + camY * 0.55, -12 - camY);
+  }
   camera.position.copy(camPos);
   camera.lookAt(camLook);
 
@@ -1583,8 +1879,8 @@ function render(dt) {
 let fps = 60;
 function updateHud() {
   $('score').innerHTML = score() + (mult() > 1 ? ' <span style="color:#ff4fa3;font-size:24px">x2</span>' : '');
-  $('info').innerHTML = `Coins ${coins}<br>Lap ${lap + 1}<br>${Math.round(speed * 3.6)} km/h` +
-    `<br>${theme.name.charAt(0) + theme.name.slice(1).toLowerCase()} ${Math.round(R)} m<br><span style="opacity:.6">${Math.round(fps)} fps</span>`;
+  $('info').innerHTML = `Coins ${coins}<br>${mode === 'arena' ? `Boss loop ${Math.min(bossLoops + 1, theme.bossLoops)}/${theme.bossLoops}` : `Lap ${worldLap + 1}/${theme.lapsToBoss}`}<br>${Math.round(speed * 3.6)} km/h` +
+    `<br>${mode === 'arena' ? 'Boss arena' : theme.name.charAt(0) + theme.name.slice(1).toLowerCase() + ' ' + Math.round(R) + ' m'}<br><span style="opacity:.6">${Math.round(fps)} fps</span>`;
   const list = [];
   for (const k of ['magnet', 'orbit', 'x2']) if (pw[k] > 0) list.push(`<span style="color:#${POWERS[k].color.toString(16).padStart(6, '0')}">${POWERS[k].label} ${Math.ceil(pw[k])}</span>`);
   if (pw.shield > 0) list.push(`<span style="color:#3dff6e">SHIELD</span>`);
@@ -1696,6 +1992,10 @@ const sfx = {
   smash: () => { beep(160, 50, 0.18, 'square', 0.12); },
   levelup: () => { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, f, 0.12, 'triangle', 0.09), i * 90)); },
   learn: () => { beep(880, 1320, 0.1, 'triangle', 0.07); },
+  thud: () => beep(120, 40, 0.25, 'square', 0.1),
+  roar: () => { beep(90, 60, 0.6, 'sawtooth', 0.09); beep(130, 70, 0.6, 'sawtooth', 0.05); },
+  bosshit: () => { beep(300, 80, 0.3, 'sawtooth', 0.12); setTimeout(() => beep(600, 300, 0.2, 'square', 0.07), 120); },
+  victory: () => { [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => beep(f, f, 0.16, 'triangle', 0.1), i * 110)); },
   combo: () => { beep(660, 660, 0.06); setTimeout(() => beep(990, 990, 0.1), 60); },
   dash: () => beep(700, 1400, 0.08, 'sawtooth', 0.04),
   hop: () => { beep(200, 1200, 0.6, 'triangle', 0.1); setTimeout(() => beep(400, 1600, 0.5, 'sine', 0.08), 200); },
@@ -1845,7 +2145,7 @@ reset();
 idle();
 requestAnimationFrame(frame);
 window.__game = { get state() { return state; }, get score() { return score(); }, action, startRun,
-  get items() { return items.length; }, get py() { return py; }, get pw() { return pw; }, get kinds() { return items.map(i => i.kind); }, get near() { return items.filter(i => i.alive).map(i => ({ k: i.kind, x: i.x, d: aheadM(i), hd: i.hd })); }, get grounded() { return grounded; }, useAbility, set meter(v) { meter = v; }, get abilityT() { return abilityT; }, get abilityTotal() { return abilityTotal; }, get ST() { return ST; }, get smashes() { return smashes; }, get airJumps() { return airJumps; }, set hold(v) { holding = v; }, get pose() { return { ...curPose }; }, get combo() { return combo; }, get theme() { return theme.name; }, get hopT() { return hopT; }, startHop, activate, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
+  get items() { return items.length; }, get py() { return py; }, get pw() { return pw; }, get kinds() { return items.map(i => i.kind); }, get near() { return items.filter(i => i.alive).map(i => ({ k: i.kind, x: i.x, d: aheadM(i), hd: i.hd })); }, get grounded() { return grounded; }, useAbility, set meter(v) { meter = v; }, get abilityT() { return abilityT; }, get abilityTotal() { return abilityTotal; }, get mode() { return mode; }, get bossHp() { return bossHp; }, get bossState() { return bossState; }, get bossKills() { return bossKills; }, get worldLap() { return worldLap; }, get ST() { return ST; }, get smashes() { return smashes; }, get airJumps() { return airJumps; }, set hold(v) { holding = v; }, get pose() { return { ...curPose }; }, get combo() { return combo; }, get theme() { return theme.name; }, get hopT() { return hopT; }, startHop, activate, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
 </script>
 <script>
 window.addEventListener('error', e => { const el = document.getElementById('err'); el.style.display = 'block'; el.textContent = 'Error: ' + e.message; });
