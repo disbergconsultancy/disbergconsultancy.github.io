@@ -2,7 +2,7 @@
 
 Ideas discussed but not built yet.
 
-## Progression: shared core upgrades (bought with coins)
+## Progression: shared core upgrades (bought with coins) - BUILT
 Separate from the per-character skill trees (which stay about play style). See docs/progression.html.
 - **Kept**: Luck (power-ups +6%/level, 5 levels), Power-up duration (+10%/level, 5 levels),
   Stumble guard (L1: 1 stumble/run, L2: lighter penalty, L3: 2 stumbles/run, cap 2). A stumble on a
