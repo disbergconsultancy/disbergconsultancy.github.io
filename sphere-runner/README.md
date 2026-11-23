@@ -5,7 +5,7 @@ design reference; this project ports it in phases.
 
 ## Open and run
 1. Godot **4.7.2** (standard build). Import → select `sphere-runner/project.godot` → Run (F5).
-2. Desktop controls: arrows / WASD (hold Up to float), mouse drag works as a swipe, Enter = tap.
+2. Desktop controls: arrows / WASD (hold Up to float), E or Shift = ability, mouse drag works as a swipe (double-click = ability).
 3. Phone: Android one-click deploy (Remote Deploy) or iOS export to Xcode on a Mac.
 
 ## Structure
@@ -20,21 +20,25 @@ Everything is built in code (no editor scenes besides `scenes/main.tscn`), so it
 | `scripts/item.gd` | One obstacle/coin/surface: logical box for collisions + visual parts |
 | `scripts/character.gd` | Block figure on a humanoid joint layout with blended poses (run, jump, float, slam, slide, land, crash) |
 | `scripts/swipe_input.gd` | Swipes (vertical-friendly zones), taps, double-taps, hold |
-| `scripts/hud.gd` | HUD, start menu, crash screen |
+| `scripts/hud.gd` | HUD, ability meter, power-up list, start menu (character, difficulty, sound), crash screen |
+| `scripts/sfx.gd` | Synthesized sound effects, rendered once at startup (no audio files) |
 
 ## Self-test (headless)
 ```
 godot --headless --path sphere-runner -- --autotest
 ```
 Simulates a 2-minute invincible run (reports distance, laps, coins, close calls, obstacle kinds),
-checks swipe directions, then a real run without input (must crash).
+checks swipe directions, every power-up and each character's ability, then a real run without input (must crash).
 
-Screenshot at N seconds into a run: `godot --path sphere-runner -- --shot out.png 8` (add `menu` for the menu).
+Screenshot at N seconds into a run: `godot --path sphere-runner -- --shot out.png 8` (add `menu` for the menu,
+`char=smasher`, `power=orbit` or `ability` to show those).
 
 ## Port status
 - **Phase 1 (done):** core run: planet, lanes, jump/float/slam/slide/air dash/jump buffer, ramps and roofs,
   all obstacle patterns, glowing floors, movers, coins, close calls, combo, waves and calm stretches,
   difficulty, laps, block character, HUD, menu, best score.
-- **Phase 2:** power-ups, the three characters and their abilities, sound.
+- **Phase 2 (done):** power-ups (magnet, shield, orbit, x2), the three characters with their bodies, stats and
+  abilities (Focus, Smash up to 5 s with debris, Super jump), ability meter and double-tap, character select,
+  best score per character and difficulty, synthesized sound with an on/off toggle.
 - **Phase 3:** planets and planet hop, boss chase, boss test.
 - **Phase 4:** XP, levels and skill trees, core shop, settings, balance stats.

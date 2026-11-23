@@ -58,3 +58,5 @@ func _input(event: InputEvent) -> void:
 				action.emit(map[event.keycode])
 		elif event.pressed and event.keycode == KEY_ENTER:
 			tapped.emit()
+		elif event.pressed and (event.keycode == KEY_E or event.keycode == KEY_SHIFT):
+			double_tapped.emit()   # keyboard: use the character ability

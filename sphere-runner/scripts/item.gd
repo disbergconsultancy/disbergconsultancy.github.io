@@ -18,3 +18,4 @@ var parts: Array = []   # [{ "node": Node3D, "dm": float, "y": float, "dx": floa
 var move_amp := 0.0
 var move_speed := 0.0
 var move_phase := 0.0
+var power := ""         # for power-ups: magnet | shield | orbit | x2

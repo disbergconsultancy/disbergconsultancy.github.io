@@ -39,6 +39,17 @@ var cam_x := 0.0
 var cam_y := 0.0
 var best := 0
 var god := false               # test mode: no crashes
+var sfx: Sfx
+# Power-ups: remaining seconds (shield is a count)
+var pw := {"magnet": 0.0, "shield": 0.0, "orbit": 0.0, "x2": 0.0, "invuln": 0.0}
+var sky_coin_in := 0.0
+var sky_wave := 0.0
+# Character ability
+var meter := 0.0
+var ability_t := 0.0
+var ability_total := 0.0
+var super_active := false
+var debris: Array = []         # [{ "node": MeshInstance3D, "v": Vector3, "life": float }]
 
 var _test := {}                # autotest bookkeeping
 
@@ -63,12 +74,19 @@ func _ready() -> void:
 	add_child(swipe)
 	swipe.action.connect(_on_action)
 	swipe.tapped.connect(_on_tap)
+	swipe.double_tapped.connect(use_ability)
+	sfx = Sfx.new()
+	add_child(sfx)
 	hud = Hud.new()
 	add_child(hud)
 	hud.play_pressed.connect(start_run)
 	hud.again_pressed.connect(start_run)
 	hud.menu_pressed.connect(_to_menu)
 	hud.pause_pressed.connect(_toggle_pause)
+	hud.character_changed.connect(func():
+		character.build(Config.char_def())
+		best = _load_best()
+		hud.show_menu(best))
 	best = _load_best()
 	reset()
 	hud.show_menu(best)
@@ -79,6 +97,14 @@ func _ready() -> void:
 		# Screenshot: --shot <file.png> <seconds into an invincible run> [menu]
 		var i := args.find("--shot")
 		_test = {"phase": "shot", "path": args[i + 1], "t": float(args[i + 2]), "menu": "menu" in args, "done": false}
+		for a in args:   # optional: char=<runner|smasher|jumper>  power=<magnet|shield|orbit|x2>  ability
+			if a.begins_with("char="):
+				Config.character = a.substr(5)
+				character.build(Config.char_def())
+			elif a.begins_with("power="):
+				_test["power"] = a.substr(6)
+			elif a == "ability":
+				_test["ability"] = true
 
 
 func _build_environment() -> void:
@@ -144,6 +170,16 @@ func reset() -> void:
 	combo_level = 1
 	shake = 0.0
 	character.set_dead(false)
+	character.set_glow(false)
+	for k in pw:
+		pw[k] = 0.0
+	meter = 0.0
+	ability_t = 0.0
+	ability_total = 0.0
+	super_active = false
+	for d in debris:
+		d["node"].queue_free()
+	debris.clear()
 	spawner.speed = speed
 	spawner.reset(angle)
 	spawner.update(angle)
@@ -151,6 +187,8 @@ func reset() -> void:
 
 
 func start_run() -> void:
+	spawner.allow_powers = true
+	sfx.enabled = Config.sound
 	reset()
 	state = "run"
 	hud.show_run()
@@ -159,6 +197,7 @@ func start_run() -> void:
 
 func _to_menu() -> void:
 	state = "menu"
+	spawner.allow_powers = false
 	reset()
 	hud.show_menu(best)
 
@@ -181,10 +220,20 @@ func score() -> int:
 	return int(pts)
 
 
-func crash() -> void:
-	if god:
+func crash(it: Item = null) -> void:
+	if god or pw["invuln"] > 0.0:
+		return
+	if pw["shield"] > 0.0:
+		pw["shield"] = 0.0
+		pw["invuln"] = 1.0
+		if it:
+			planet.hide_item(it)
+		shake = 0.35
+		hud.flash("SHIELD!")
+		sfx.play("shield")
 		return
 	state = "hit"
+	sfx.play("crash")
 	hit_t = Config.HIT_PAUSE
 	shake = 0.5
 	character.set_dead(true)
@@ -215,22 +264,31 @@ func _on_action(dir: String) -> void:
 			var nl := clampi(lane + (-1 if dir == "left" else 1), -1, 1)
 			if nl != lane:
 				lane = nl
-				if not grounded:
+				if not grounded and pw["orbit"] <= 0.0:
 					dash_t = 0.18   # air dash: faster lane switch in the air
+					sfx.play("dash")
+				else:
+					sfx.play("swish")
 		"up":
+			if pw["orbit"] > 0.0:
+				return
 			if grounded:
 				_jump()
 			else:
 				jump_buffer_t = Config.JUMP_BUFFER
 		"down":
+			if pw["orbit"] > 0.0:
+				return
 			slide_t = Config.SLIDE_TIME
 			if not grounded:
 				vy = Config.SLAM_V
+			sfx.play("slide")
 
 
 func _jump() -> void:
 	slide_t = 0.0
-	vy = Config.JUMP_V
+	vy = Config.char_def()["jump_v"]
+	sfx.play("jump")
 	jump_buffer_t = 0.0
 	grounded = false
 	squash = -1.0
@@ -238,12 +296,109 @@ func _jump() -> void:
 
 
 func _add_combo(n: int) -> void:
+	var was := meter
+	var gain: float = Config.METER_PER_CLOSE if n >= 3 else Config.METER_PER_COIN * n
+	meter = minf(1.0, meter + gain * Config.char_def()["meter_mul"])
+	if was < 1.0 and meter >= 1.0:
+		hud.pop(Config.char_def()["label"] + " READY")
+		sfx.play("ready")
 	combo += n
-	combo_t = Config.COMBO_TIME
+	combo_t = Config.char_def()["combo_time"]
 	var lv := _combo_mult()
 	if lv > combo_level:
 		combo_level = lv
 		hud.pop("COMBO x%d" % lv)
+		sfx.play("combo")
+
+
+func _mult() -> int:
+	return 2 if pw["x2"] > 0.0 else 1
+
+
+# =====================================================================
+# Power-ups and abilities
+# =====================================================================
+
+func activate(kind: String) -> void:
+	sfx.play("power")
+	hud.flash(Config.POWERS[kind]["label"])
+	if kind == "shield":
+		pw["shield"] = 1.0
+	else:
+		pw[kind] = Config.POWERS[kind]["time"]
+	if kind == "orbit":
+		sky_coin_in = 0.0
+		slide_t = 0.0
+		pw["invuln"] = Config.POWERS["orbit"]["time"] + 1.4
+
+
+## Double-tap when the meter is full.
+func use_ability() -> void:
+	if state != "run" or meter < 1.0 or pw["orbit"] > 0.0 or ability_t > 0.0:
+		return
+	var d := Config.char_def()
+	meter = 0.0
+	sfx.play("ability")
+	hud.flash(d["label"] + "!")
+	if d["ability"] == "super":
+		slide_t = 0.0
+		vy = Config.SUPER_JUMP_V
+		grounded = false
+		float_t = 0.0
+		squash = -1.0
+		jump_buffer_t = 0.0
+		super_active = true
+		ability_t = 1.6       # only for the glow
+		ability_total = 1.6
+	else:
+		ability_t = d["ability_time"]
+		ability_total = d["ability_time"]
+
+
+func _smash(it: Item) -> void:
+	planet.hide_item(it)
+	_burst(it, Config.KIND[it.kind]["color"])
+	shake = maxf(shake, 0.25)
+	sfx.play("smash")
+	var b: int = Config.SMASH_POINTS * _mult() * _combo_mult()
+	pts += b
+	_add_combo(2)
+	# Each smash extends Smash a little, but one activation never lasts longer than ability_max.
+	var d := Config.char_def()
+	var add := clampf(d["ability_max"] - ability_total, 0.0, d["smash_extend"])
+	ability_t += add
+	ability_total += add
+	hud.pop("SMASH +%d%s" % [b, ("  +%.1fs" % add) if add > 0.0 else ""])
+
+
+## Debris: small cubes thrown up and back.
+func _burst(it: Item, color: Color) -> void:
+	var origin: Vector3 = it.parts[0]["node"].global_position
+	var m := planet.mat(color)
+	for i in 10:
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		var sz := randf_range(0.15, 0.4)
+		bm.size = Vector3(sz, sz, sz)
+		mi.mesh = bm
+		mi.material_override = m
+		add_child(mi)
+		mi.global_position = origin + Vector3(randf_range(-0.6, 0.6), randf_range(0, 0.8), randf_range(-0.3, 0.3))
+		debris.append({"node": mi, "v": Vector3(randf_range(-4, 4), randf_range(4, 11), randf_range(-2, 2)), "life": 0.9})
+
+
+func _update_debris(dt: float) -> void:
+	for i in range(debris.size() - 1, -1, -1):
+		var d: Dictionary = debris[i]
+		d["life"] -= dt
+		d["v"].y -= 30.0 * dt
+		var n: MeshInstance3D = d["node"]
+		n.position += d["v"] * dt
+		n.position.z += speed * dt if state == "run" else 0.0    # left behind as the world moves
+		n.rotation += Vector3(8, 6, 0) * dt
+		if d["life"] <= 0.0:
+			n.queue_free()
+			debris.remove_at(i)
 
 
 func _combo_mult() -> int:
@@ -259,7 +414,13 @@ func _process(delta: float) -> void:
 		_autotest_tick()
 		return
 	var dt := minf(delta, 0.05)
-	step(dt)
+	var gdt := dt
+	if state == "run" and ability_t > 0.0:
+		ability_t = maxf(0.0, ability_t - dt)
+		if Config.char_def()["ability"] == "focus":
+			gdt = dt * 0.45     # Focus slows the whole game down
+	step(gdt)
+	_update_debris(gdt)
 	_render(dt)
 
 
@@ -279,13 +440,14 @@ func step(dt: float) -> void:
 	speed = minf(d["max"], speed + d["accel"] * dt)
 	angle += speed / planet.radius * dt
 	dist += speed * dt
-	pts += speed * dt
+	pts += speed * dt * _mult()
 	planet.rotation.x = fmod(angle, TAU)
 	var new_lap := int(angle / TAU)
 	if new_lap > lap:
 		lap = new_lap
 		speed = minf(d["max"], speed + Config.LAP_BONUS)
 		hud.flash("LAP %d" % (lap + 1))
+		sfx.play("lap")
 	if combo_t > 0.0:
 		combo_t -= dt
 		if combo_t <= 0.0:
@@ -293,6 +455,15 @@ func step(dt: float) -> void:
 			combo_level = 1
 	if dash_t > 0.0:
 		dash_t -= dt
+	for k in ["magnet", "orbit", "x2", "invuln"]:
+		pw[k] = maxf(0.0, pw[k] - dt)
+	# Orbit: a trail of sky coins to collect while flying high.
+	if pw["orbit"] > 0.0:
+		sky_coin_in -= speed * dt
+		if sky_coin_in <= 0.0 and pw["orbit"] > 1.2:
+			sky_coin_in = 2.2
+			sky_wave += 0.35
+			planet.add_item("COIN", angle + 26.0 / planet.radius, sin(sky_wave) * Config.LANE_W, {"y0": Config.ORBIT_H + 0.4})
 	# Moving blocks
 	var t := Time.get_ticks_msec() / 1000.0
 	for it in planet.items:
@@ -328,7 +499,13 @@ func _surface_under_player() -> float:
 
 
 func _move_player(dt: float) -> void:
-	px = move_toward(px, lane * Config.LANE_W, Config.LANE_SPEED * (2.0 if dash_t > 0.0 else 1.0) * dt)
+	var cd := Config.char_def()
+	px = move_toward(px, lane * Config.LANE_W, Config.LANE_SPEED * cd["lane_mul"] * (2.0 if dash_t > 0.0 else 1.0) * dt)
+	if pw["orbit"] > 0.0:
+		py += (Config.ORBIT_H - py) * minf(1.0, dt * 3.0)   # float high above the globe
+		vy = 0.0
+		grounded = false
+		return
 	var ground_y := _surface_under_player()
 	if grounded and py < ground_y:
 		py = ground_y             # walking up a ramp
@@ -336,7 +513,7 @@ func _move_player(dt: float) -> void:
 		grounded = false
 		var g := Config.GRAVITY
 		# Holding the finger down after a jump floats a little near the top.
-		if swipe.holding and vy < 3.0 and float_t < Config.FLOAT_TIME and slide_t <= 0.0:
+		if swipe.holding and vy < 3.0 and float_t < cd["float_time"] and slide_t <= 0.0:
 			g *= Config.FLOAT_GRAVITY
 			float_t += dt
 		vy -= g * dt
@@ -348,6 +525,7 @@ func _move_player(dt: float) -> void:
 			grounded = true
 			if hard:
 				squash = 1.0
+			super_active = false
 			character.land_t = 0.16
 			if jump_buffer_t > 0.0:
 				_jump()
@@ -373,6 +551,16 @@ func _collide() -> void:
 		if not it.alive:
 			continue
 		var d := _ahead_m(it)
+		# Magnet pulls nearby coins in.
+		if it.kind == "COIN" and pw["magnet"] > 0.0 and d < 9.0 and d > -1.0 and absf(it.x - px) < 5.0:
+			var k := minf(1.0, get_process_delta_time() * 10.0)
+			it.x += (px - it.x) * k
+			it.y0 += (py + 0.5 - it.y0) * k
+			it.y1 = it.y0 + 0.45
+			it.phi += (angle - it.phi) * k
+			it.parts[0]["y"] = it.y0 + 0.225
+			planet.place_item(it)
+			d = _ahead_m(it)
 		var overlap_z := absf(d) <= it.hd + hd
 		var overlap_x := absf(it.x - px) <= it.hw + hw
 		# Close calls: clearing an obstacle by a small margin.
@@ -384,12 +572,13 @@ func _collide() -> void:
 				it.min_clear = minf(it.min_clear, maxf(lat, maxf(above, below)))
 			elif d < -(it.hd + hd):
 				it.passed = true
-				if it.min_clear < Config.NEAR_MISS and it.min_clear > -0.3:
+				if it.min_clear < Config.NEAR_MISS and it.min_clear > -0.3 and pw["orbit"] <= 0.0:
 					close_calls += 1
-					var b := 25 * _combo_mult()
+					var b := 25 * _mult() * _combo_mult()
 					pts += b
 					_add_combo(3)
 					hud.pop("CLOSE! +%d" % b)
+					sfx.play("close")
 		if not overlap_z or not overlap_x:
 			continue
 		match it.kind:
@@ -397,14 +586,14 @@ func _collide() -> void:
 				continue
 			"PIT":
 				# Glowing floor: deadly with your feet on it (thinner than the hitbox margin).
-				if py <= 0.05:
-					crash()
+				if py <= 0.05 and pw["orbit"] <= 0.0:
+					crash(it)
 					if state != "run":
 						return
 				continue
 			"PLATFORM":
-				if py < it.y1 - Config.STEP_UP:
-					crash()
+				if py < it.y1 - Config.STEP_UP and pw["orbit"] <= 0.0:
+					crash(it)
 					if state != "run":
 						return
 				continue
@@ -413,10 +602,17 @@ func _collide() -> void:
 		if it.kind == "COIN":
 			planet.hide_item(it)
 			coins += 1
-			pts += 10 * _combo_mult()
+			pts += 10 * _mult() * _combo_mult()
 			_add_combo(1)
-		else:
-			crash()
+			sfx.play("coin")
+		elif it.kind == "POWER":
+			planet.hide_item(it)
+			activate(it.power)
+		elif pw["orbit"] <= 0.0:
+			if ability_t > 0.0 and Config.char_def()["ability"] == "smash" and it.kind in Config.SMASHABLE:
+				_smash(it)
+				continue
+			crash(it)
 			if state != "run":
 				return
 
@@ -430,10 +626,13 @@ func _render(dt: float) -> void:
 	squash *= pow(0.001, dt)
 	var sq := 1.0 - 0.25 * squash if squash > 0.0 else 1.0 + 0.2 * -squash
 	character.position = Vector3(px, planet.radius + py, 0.0)
+	character.set_glow(state == "run" and ability_t > 0.0)
+	# Blink while invulnerable after a shield hit or orbit.
+	character.visible = not (pw["invuln"] > 0.0 and pw["invuln"] < 1.4 and int(Time.get_ticks_msec() / 80) % 2 == 0)
 	character.scale = Vector3(1.0 / sqrt(sq), sq, 1.0 / sqrt(sq))
 	character.update_pose(dt, state, {
 		"grounded": grounded, "slide": slide_t, "vy": vy, "speed": speed,
-		"floating": swipe.holding and float_t > 0.0 and float_t < Config.FLOAT_TIME and vy < 3.0,
+		"floating": swipe.holding and float_t > 0.0 and float_t < Config.char_def()["float_time"] and vy < 3.0,
 		"lean": px - lane * Config.LANE_W, "twist": (lane * Config.LANE_W - px) if dash_t > 0.0 else 0.0})
 	hitbox.scale = Vector3(Config.PLAYER_SIZE.x, h, Config.PLAYER_SIZE.z)
 	hitbox.position = Vector3(px, planet.radius + py + h / 2.0, 0.0)
@@ -443,7 +642,7 @@ func _render(dt: float) -> void:
 				p["node"].rotate_object_local(Vector3.UP, dt * 4.0)
 	# Camera follows sideways and rises a little with jumps.
 	cam_x += (px * 0.6 - cam_x) * minf(1.0, dt * 8.0)
-	cam_y += (py * 0.6 - cam_y) * minf(1.0, dt * 3.0)
+	cam_y += ((py * 1.1 if pw["orbit"] > 0.0 else py * 0.6) - cam_y) * minf(1.0, dt * 3.0)
 	var off := Vector3.ZERO
 	if shake > 0.0:
 		shake = maxf(0.0, shake - dt)
@@ -457,6 +656,20 @@ func _update_hud() -> void:
 	hud.score_label.text = str(score())
 	hud.info_label.text = "Coins %d\nLap %d\n%d km/h" % [coins, lap + 1, int(speed * 3.6)]
 	hud.combo_label.text = "COMBO x%d  (%d)" % [_combo_mult(), combo] if combo >= 3 else ""
+	var list: Array[String] = []
+	for k in ["magnet", "orbit", "x2"]:
+		if pw[k] > 0.0:
+			list.append("%s %d" % [Config.POWERS[k]["label"], ceili(pw[k])])
+	if pw["shield"] > 0.0:
+		list.append("SHIELD")
+	hud.powers_label.text = "\n".join(list)
+	if _mult() > 1:
+		hud.score_label.text += "  x2"
+	var cd := Config.char_def()
+	var showing_ability: bool = ability_t > 0.0 and cd["ability_time"] > 0.0
+	var frac: float = ability_t / cd["ability_max"] if showing_ability else meter
+	var text: String = cd["label"] if showing_ability else ("DOUBLE-TAP: " + cd["label"] if meter >= 1.0 else cd["label"])
+	hud.set_meter(frac, cd["visor"], text, meter >= 1.0 and ability_t <= 0.0)
 
 
 # =====================================================================
@@ -466,15 +679,82 @@ func _update_hud() -> void:
 func _load_best() -> int:
 	var cfg := ConfigFile.new()
 	if cfg.load("user://save.cfg") == OK:
-		return int(cfg.get_value("best", Config.difficulty, 0))
+		return int(cfg.get_value("best", Config.character + "_" + Config.difficulty, 0))
 	return 0
 
 
 func _save_best() -> void:
 	var cfg := ConfigFile.new()
 	cfg.load("user://save.cfg")
-	cfg.set_value("best", Config.difficulty, best)
+	cfg.set_value("best", Config.character + "_" + Config.difficulty, best)
 	cfg.save("user://save.cfg")
+
+
+func _spawn_ahead(kind: String, m: float) -> Item:
+	return planet.add_item(kind, angle + m / planet.radius, Config.lane_x(lane))
+
+
+## Runs `seconds` of game time; Focus slows the game like the real frame loop does.
+func _sim(seconds: float, dt: float) -> float:
+	var peak := py
+	for i in int(seconds / dt):
+		var gdt := dt
+		if ability_t > 0.0:
+			ability_t = maxf(0.0, ability_t - dt)
+			if Config.char_def()["ability"] == "focus":
+				gdt = dt * 0.45
+		step(gdt)
+		_update_debris(gdt)
+		peak = maxf(peak, py)
+	return peak
+
+
+func _autotest_phase2(dt: float) -> void:
+	# Power-ups
+	god = true
+	start_run()
+	_sim(0.5, dt)
+	activate("magnet")
+	var c0 := coins
+	_sim(6.0, dt)
+	print("AUTOTEST magnet: %.1f s left after 6 s, coins collected %d" % [pw["magnet"], coins - c0])
+	activate("orbit")
+	var peak := _sim(3.0, dt)
+	print("AUTOTEST orbit: height %.1f m (target %.1f)" % [peak, Config.ORBIT_H])
+	_sim(6.0, dt)
+	print("AUTOTEST orbit ended: grounded %s, height %.2f" % [grounded, py])
+	god = false
+	pw["invuln"] = 0.0
+	activate("shield")
+	_spawn_ahead("WALL", 4.0)
+	_sim(1.0, dt)
+	print("AUTOTEST shield: state after hitting a wall = %s, shield left %d" % [state, int(pw["shield"])])
+	# Abilities per character
+	for c in Config.CHARS:
+		Config.character = c
+		character.build(Config.char_def())
+		god = true
+		start_run()
+		_sim(0.5, dt)
+		meter = 1.0
+		use_ability()
+		var report := ""
+		if c == "runner":
+			var d0 := dist
+			_sim(1.0, dt)
+			report = "focus active %.2f s left, distance in 1 s of real time %.1f m (normal %.1f m)" % [ability_t, dist - d0, speed]
+		elif c == "smasher":
+			god = false
+			_spawn_ahead("WALL", 6.0)
+			_spawn_ahead("LOW", 14.0)
+			_sim(1.5, dt)
+			report = "after running into a wall and a crate during Smash: state %s, Smash %.2f s left (extended to %.1f)" % [state, ability_t, ability_total]
+		else:
+			var p := _sim(2.0, dt)
+			report = "super jump peak %.1f m (normal jump ~%.1f m)" % [p, pow(Config.char_def()["jump_v"], 2) / (2.0 * Config.GRAVITY)]
+		print("AUTOTEST %s: %s" % [c, report])
+	Config.character = "runner"
+	character.build(Config.char_def())
 
 
 # =====================================================================
@@ -490,8 +770,19 @@ func _autotest_tick() -> void:
 		if not _test["menu"]:
 			god = true
 			start_run()
-			for i in int(_test["t"] * 60.0):
-				step(dt)
+			var n := int(_test["t"] * 60.0)
+			for i in n:
+				if i == n - 90:
+					if _test.has("power"):
+						activate(_test["power"])
+					if _test.has("ability"):
+						meter = 1.0
+						use_ability()
+				var gdt := dt
+				if ability_t > 0.0:
+					ability_t = maxf(0.0, ability_t - dt)
+				step(gdt)
+				_update_debris(gdt)
 				_render(dt)
 		else:
 			for i in 30:
@@ -542,6 +833,9 @@ func _autotest_tick() -> void:
 			t1.position = dr.position
 			swipe._input(t1)
 		print("AUTOTEST swipes 0/30/45/60/90/135/180/270 deg -> ", got.slice(got.size() - 8))
+		_test["phase"] = "phase2"
+	elif _test["phase"] == "phase2":
+		_autotest_phase2(dt)
 		_test["phase"] = "real"
 	elif _test["phase"] == "real":
 		god = false

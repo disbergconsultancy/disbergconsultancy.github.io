@@ -7,57 +7,80 @@ extends Node3D
 
 const KEYS := ["y", "rx", "ry", "rz", "spine", "head", "arm_lx", "arm_lz", "arm_rx", "arm_rz",
 	"fore_l", "fore_r", "thigh_lx", "thigh_lz", "thigh_rx", "thigh_rz", "shin_l", "shin_r"]
-const HIP_Y := 0.66
-const BODY_COLOR := Color("3380ff")
-const LIMB_COLOR := Color("2559c4")
+var hip_y := 0.66
 
 var pivot := Node3D.new()      # at the hips: tilts, leans and flips rotate here
 var j := {}                    # joints by name
 var pose := {}                 # current blended pose
 var run_phase := 0.0
 var land_t := 0.0
+var def := {}
 var body_mat := StandardMaterial3D.new()
 var limb_mat := StandardMaterial3D.new()
+var accent_mat := StandardMaterial3D.new()
+var head_mat := StandardMaterial3D.new()
+var visor_mat := StandardMaterial3D.new()
 
 
 func _ready() -> void:
 	for k in KEYS:
 		pose[k] = 0.0
-	body_mat.albedo_color = BODY_COLOR
-	limb_mat.albedo_color = LIMB_COLOR
-	var head_mat := StandardMaterial3D.new()
 	head_mat.albedo_color = Color("f0f0f5")
-	var visor_mat := StandardMaterial3D.new()
-	visor_mat.albedo_color = Color("29d4ff")
 	visor_mat.emission_enabled = true
-	visor_mat.emission = Color("29d4ff")
 	visor_mat.emission_energy_multiplier = 0.4
-	pivot.position.y = HIP_Y
+	body_mat.emission_enabled = true
+	body_mat.emission_energy_multiplier = 0.0
 	add_child(pivot)
+	build(Config.char_def())
+
+
+## Same skeleton for every character type; only proportions and colours differ,
+## so every pose works for all of them.
+func build(d: Dictionary) -> void:
+	def = d
+	for c in pivot.get_children():
+		c.queue_free()
+	j.clear()
+	set_dead(false)
+	accent_mat.albedo_color = d["accent"]
+	visor_mat.albedo_color = d["visor"]
+	visor_mat.emission = d["visor"]
+	var sh: Dictionary = d["shape"]
+	var leg: float = sh["leg_len"]
+	var tw: float = sh["torso_w"]
+	var hs: float = sh["head"]
+	hip_y = 0.07 + 0.59 * leg
+	pivot.position.y = hip_y
 	j["hips"] = _joint(pivot, Vector3.ZERO)
-	_part(j["hips"], Vector3(0.42, 0.16, 0.26), limb_mat, Vector3.ZERO)
+	_part(j["hips"], Vector3(0.42 * tw, 0.16, 0.26), limb_mat, Vector3.ZERO)
 	j["spine"] = _joint(j["hips"], Vector3(0, 0.06, 0))
-	_part(j["spine"], Vector3(0.5, 0.44, 0.28), body_mat, Vector3(0, 0.24, 0))
-	_part(j["spine"], Vector3(0.34, 0.3, 0.12), head_mat, Vector3(0, 0.26, 0.19))     # backpack (faces the camera)
+	_part(j["spine"], Vector3(0.5 * tw, 0.44, 0.28 * sqrt(tw)), body_mat, Vector3(0, 0.24, 0))
+	_part(j["spine"], Vector3(0.34 * tw, 0.3, 0.12), head_mat, Vector3(0, 0.26, 0.19 * sqrt(tw)))     # backpack (faces the camera)
+	if d.get("heavy", false):
+		for sx in [-1.0, 1.0]:
+			_part(j["spine"], Vector3(0.26, 0.14, 0.34), accent_mat, Vector3(sx * 0.36 * sh["shoulder"], 0.47, 0))   # shoulder pads
 	j["head"] = _joint(j["spine"], Vector3(0, 0.48, 0))
-	_part(j["head"], Vector3(0.32, 0.3, 0.3), head_mat, Vector3(0, 0.16, 0))
-	_part(j["head"], Vector3(0.26, 0.08, 0.04), visor_mat, Vector3(0, 0.18, -0.16))  # visor on the front
+	_part(j["head"], Vector3(0.32, 0.3, 0.3) * hs, head_mat, Vector3(0, 0.16 * hs, 0))
+	_part(j["head"], Vector3(0.26 * hs, 0.08, 0.04), visor_mat, Vector3(0, 0.18 * hs, -0.16 * hs))   # visor on the front
 	for s in [-1, 1]:
 		var side := "l" if s < 0 else "r"
-		var arm := _joint(j["spine"], Vector3(s * 0.32, 0.42, 0))
+		var at: float = sh["arm_t"]
+		var lt: float = sh["leg_t"]
+		var hand: float = sh["hand"]
+		var arm := _joint(j["spine"], Vector3(s * 0.32 * sh["shoulder"], 0.42, 0))
 		j["arm_" + side] = arm
-		_part(arm, Vector3(0.13, 0.3, 0.13), body_mat, Vector3(0, -0.14, 0))
+		_part(arm, Vector3(0.13 * at, 0.3, 0.13 * at), body_mat, Vector3(0, -0.14, 0))
 		var fore := _joint(arm, Vector3(0, -0.29, 0))
 		j["fore_" + side] = fore
-		_part(fore, Vector3(0.12, 0.24, 0.12), limb_mat, Vector3(0, -0.12, 0))
-		_part(fore, Vector3(0.13, 0.11, 0.13), head_mat, Vector3(0, -0.29, 0))
-		var thigh := _joint(j["hips"], Vector3(s * 0.12, -0.04, 0))
+		_part(fore, Vector3(0.12 * at, 0.24, 0.12 * at), limb_mat, Vector3(0, -0.12, 0))
+		_part(fore, Vector3(0.13, 0.11, 0.13) * hand, accent_mat if d.get("heavy", false) else head_mat, Vector3(0, -0.27 - 0.03 * hand, 0))
+		var thigh := _joint(j["hips"], Vector3(s * 0.12 * tw, -0.04, 0))
 		j["thigh_" + side] = thigh
-		_part(thigh, Vector3(0.17, 0.32, 0.17), limb_mat, Vector3(0, -0.15, 0))
-		var shin := _joint(thigh, Vector3(0, -0.3, 0))
+		_part(thigh, Vector3(0.17 * lt, 0.32 * leg, 0.17 * lt), limb_mat, Vector3(0, -0.15 * leg, 0))
+		var shin := _joint(thigh, Vector3(0, -0.3 * leg, 0))
 		j["shin_" + side] = shin
-		_part(shin, Vector3(0.15, 0.28, 0.15), limb_mat, Vector3(0, -0.14, 0))
-		_part(shin, Vector3(0.17, 0.08, 0.28), head_mat, Vector3(0, -0.29, -0.05))     # shoe
+		_part(shin, Vector3(0.15 * lt, 0.28 * leg, 0.15 * lt), limb_mat, Vector3(0, -0.14 * leg, 0))
+		_part(shin, Vector3(0.17 * lt, 0.08, 0.28), accent_mat if d["ability"] == "super" else head_mat, Vector3(0, -0.29 * leg, -0.05))   # shoe
 
 
 func _joint(parent: Node3D, pos: Vector3) -> Node3D:
@@ -78,8 +101,20 @@ func _part(parent: Node3D, size: Vector3, m: Material, pos: Vector3) -> void:
 
 
 func set_dead(dead: bool) -> void:
-	body_mat.albedo_color = Color("ff2626") if dead else BODY_COLOR
-	limb_mat.albedo_color = Color("c41e1e") if dead else LIMB_COLOR
+	if def.is_empty():
+		return
+	body_mat.albedo_color = Color("ff2626") if dead else def["body"]
+	limb_mat.albedo_color = Color("c41e1e") if dead else def["limb"]
+
+
+## Pulse a glow while an ability is active.
+func set_glow(on: bool) -> void:
+	if not on:
+		body_mat.emission_energy_multiplier = 0.0
+		return
+	var c := Color("ff6a00") if def["ability"] == "smash" else Color("55ff55") if def["ability"] == "super" else Color("3377ff")
+	body_mat.emission = c
+	body_mat.emission_energy_multiplier = 0.6 + 0.4 * sin(Time.get_ticks_msec() / 60.0)
 
 
 # --- Poses. For arms and legs +X swings forward; a shin bends back with -X, a forearm forward with +X.
@@ -159,7 +194,7 @@ func update_pose(dt: float, state: String, s: Dictionary) -> void:
 	var a := 1.0 - exp(-dt * (10.0 if state == "hit" else 18.0))
 	for k in KEYS:
 		pose[k] += (target.get(k, 0.0) - pose[k]) * a
-	pivot.position.y = HIP_Y + pose["y"]
+	pivot.position.y = hip_y + pose["y"]
 	var lean: float = s["lean"] * 0.12
 	var twist: float = s["twist"] * 0.35
 	pivot.rotation = Vector3(pose["rx"], pose["ry"] + twist, pose["rz"] + lean)

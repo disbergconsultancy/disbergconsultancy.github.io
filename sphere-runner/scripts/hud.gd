@@ -7,6 +7,7 @@ signal play_pressed
 signal again_pressed
 signal menu_pressed
 signal pause_pressed
+signal character_changed
 
 var score_label: Label
 var info_label: Label
@@ -19,6 +20,13 @@ var over_text: Label
 var best_label: Label
 var pause_button: Button
 var diff_buttons := {}
+var char_buttons := {}
+var char_desc: Label
+var sound_toggle: CheckButton
+var powers_label: Label
+var meter_bg: Panel
+var meter_fill: ColorRect
+var meter_label: Label
 var _flash_t := 0.0
 var _pop_t := 0.0
 
@@ -40,9 +48,53 @@ func _ready() -> void:
 	pause_button.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_KEEP_SIZE, 24)
 	pause_button.pressed.connect(func(): pause_pressed.emit())
 
+	powers_label = _label(24, HORIZONTAL_ALIGNMENT_LEFT, VERTICAL_ALIGNMENT_BOTTOM, Vector2(24, 0))
+	powers_label.offset_bottom = -40
+	_build_meter()
 	_build_menu()
 	_build_over()
 	show_menu()
+
+
+## Ability meter at the bottom centre; pulses "DOUBLE-TAP" when full.
+func _build_meter() -> void:
+	meter_bg = Panel.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0.4)
+	sb.set_corner_radius_all(18)
+	meter_bg.add_theme_stylebox_override("panel", sb)
+	meter_bg.clip_contents = true
+	add_child(meter_bg)
+	meter_bg.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	meter_bg.custom_minimum_size = Vector2(380, 36)
+	meter_bg.size = Vector2(380, 36)
+	meter_bg.position = Vector2(-190, -84)
+	meter_bg.offset_left = -190
+	meter_bg.offset_right = 190
+	meter_bg.offset_top = -84
+	meter_bg.offset_bottom = -48
+	meter_fill = ColorRect.new()
+	meter_bg.add_child(meter_fill)
+	meter_fill.position = Vector2.ZERO
+	meter_fill.size = Vector2(0, 36)
+	meter_label = Label.new()
+	meter_bg.add_child(meter_label)
+	meter_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	meter_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	meter_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	meter_label.add_theme_font_size_override("font_size", 20)
+	meter_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	meter_label.add_theme_constant_override("outline_size", 6)
+	meter_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
+func set_meter(fraction: float, color: Color, text: String, pulse: bool) -> void:
+	meter_fill.size = Vector2(380.0 * clampf(fraction, 0.0, 1.0), 36)
+	meter_fill.color = color
+	meter_label.text = text
+	var s := 1.0 + (0.06 * sin(Time.get_ticks_msec() / 100.0) if pulse else 0.0)
+	meter_bg.pivot_offset = Vector2(190, 18)
+	meter_bg.scale = Vector2(s, s)
 
 
 func _label(size: int, h: HorizontalAlignment, v: VerticalAlignment, offset: Vector2) -> Label:
@@ -111,6 +163,19 @@ func _build_menu() -> void:
 	var box: VBoxContainer = pb[1]
 	_text(box, "Sphere Runner", 52)
 	_text(box, "Swipe left/right to switch lane, up to jump (hold to float), down to slide or slam.", 24)
+	_text(box, "Character", 26)
+	var crow := HBoxContainer.new()
+	crow.add_theme_constant_override("separation", 10)
+	box.add_child(crow)
+	for c in Config.CHARS:
+		var b := _button(crow, Config.CHARS[c]["name"], Config.CHARS[c]["body"])
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.custom_minimum_size = Vector2(0, 72)
+		b.add_theme_font_size_override("font_size", 26)
+		b.pressed.connect(_set_character.bind(c))
+		char_buttons[c] = b
+	char_desc = _text(box, "", 21)
+	char_desc.custom_minimum_size = Vector2(536, 0)
 	_text(box, "Difficulty", 26)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
@@ -126,6 +191,13 @@ func _build_menu() -> void:
 		row.add_child(b)
 		diff_buttons[d] = b
 	_set_difficulty(Config.difficulty)
+	_set_character(Config.character, false)
+	sound_toggle = CheckButton.new()
+	sound_toggle.text = "Sound"
+	sound_toggle.button_pressed = Config.sound
+	sound_toggle.add_theme_font_size_override("font_size", 26)
+	sound_toggle.toggled.connect(func(on): Config.sound = on)
+	box.add_child(sound_toggle)
 	_button(box, "Play", Color("3d8bff")).pressed.connect(func(): play_pressed.emit())
 	best_label = _text(box, "", 22)
 
@@ -134,6 +206,15 @@ func _set_difficulty(d: String) -> void:
 	Config.difficulty = d
 	for k in diff_buttons:
 		diff_buttons[k].button_pressed = k == d
+
+
+func _set_character(c: String, emit := true) -> void:
+	Config.character = c
+	for k in char_buttons:
+		char_buttons[k].modulate = Color.WHITE if k == c else Color(1, 1, 1, 0.45)
+	char_desc.text = Config.CHARS[c]["desc"] + " Double-tap when the meter is full."
+	if emit:
+		character_changed.emit()
 
 
 func _build_over() -> void:
@@ -150,6 +231,7 @@ func show_menu(best := 0) -> void:
 	menu_panel.visible = true
 	over_panel.visible = false
 	pause_button.visible = false
+	meter_bg.visible = false
 	best_label.text = "Best: %d" % best
 
 
@@ -157,12 +239,14 @@ func show_run() -> void:
 	menu_panel.visible = false
 	over_panel.visible = false
 	pause_button.visible = true
+	meter_bg.visible = true
 
 
 func show_over(text: String) -> void:
 	over_text.text = text
 	over_panel.visible = true
 	pause_button.visible = false
+	meter_bg.visible = false
 
 
 func flash(text: String) -> void:

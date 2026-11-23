@@ -152,7 +152,7 @@ func _box(size: Vector3, color: Color, glow := 0.0) -> MeshInstance3D:
 func add_item(kind: String, phi: float, x: float, opts := {}) -> Item:
 	var k: Dictionary = Config.KIND[kind]
 	var it := Item.new()
-	var w: float = opts.get("w", 0.45 if kind == "COIN" else Config.LANE_W * 0.85)
+	var w: float = opts.get("w", 0.45 if kind == "COIN" else 0.7 if kind == "POWER" else Config.LANE_W * 0.85)
 	var h: float = opts.get("h", k["h"])
 	var depth: float = opts.get("depth", k["d"])
 	it.kind = kind
@@ -182,6 +182,10 @@ func add_item(kind: String, phi: float, x: float, opts := {}) -> Item:
 			it.parts.append({"node": _box(Vector3(w, h, depth), color, 1.2), "dm": 0.0, "y": 0.03})
 		"COIN":
 			it.parts.append({"node": _box(Vector3(w, h, depth), color, 0.4), "dm": 0.0, "y": it.y0 + h / 2.0, "spin": true})
+		"POWER":
+			it.power = opts.get("power", "magnet")
+			var pc: Color = Config.POWERS[it.power]["color"]
+			it.parts.append({"node": _box(Vector3(w, h, depth), pc, 0.9), "dm": 0.0, "y": it.y0 + h / 2.0, "spin": true})
 		_:
 			it.parts.append({"node": _box(Vector3(w, h, depth), color), "dm": 0.0, "y": it.y0 + h / 2.0})
 			_add_details(it, kind, w, h, depth)

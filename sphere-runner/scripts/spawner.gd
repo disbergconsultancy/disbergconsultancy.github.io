@@ -15,6 +15,8 @@ var spawned := 0
 var wave_left := 0.0
 var calm_next := false
 var speed := 10.0          # current run speed, set by the game each frame
+var allow_powers := false  # power-ups only during a run (not behind the menu)
+var power_in := 90.0       # metres until the next power-up
 var rng := RandomNumberGenerator.new()
 
 
@@ -28,6 +30,7 @@ func reset(start_angle: float) -> void:
 	spawned = 0
 	wave_left = Config.WAVE_M[Config.difficulty]
 	calm_next = false
+	power_in = 90.0
 
 
 func update(angle: float) -> void:
@@ -46,6 +49,11 @@ func update(angle: float) -> void:
 			wave_left -= length + gap
 			if wave_left <= 0.0:
 				calm_next = true
+		# Power-ups float in the empty gap between patterns.
+		power_in -= length + gap
+		if power_in <= 0.0 and allow_powers:
+			power_in = 160.0 + rng.randf() * 140.0
+			_add_power(next_spawn + (length + gap / 2.0) / r, _lane())
 		next_spawn += (length + gap) / r
 	# Remove what is well behind the runner.
 	var keep: Array[Item] = []
@@ -72,6 +80,10 @@ func _pick_chunk() -> String:
 		if roll < 0.0:
 			return k
 	return "row"
+
+
+func _add_power(phi: float, lane: int) -> void:
+	planet.add_item("POWER", phi, Config.lane_x(lane), {"power": Config.POWERS.keys().pick_random()})
 
 
 func _lane() -> int:
@@ -228,4 +240,7 @@ func _chunk_calm(phi: float) -> float:
 		var y := 1.2 + sin(m * 0.5) * 0.6 if int(m / 18.0) % 2 == 1 else 0.4
 		planet.add_item("COIN", _at(phi, m), Config.lane_x(lane), {"y0": y})
 		m += 1.8
+	if allow_powers and rng.randf() < 0.6:   # usually a power-up at the end of a calm stretch
+		_add_power(_at(phi, Config.CALM_M - 5.0), _lane())
+		power_in = 160.0 + rng.randf() * 100.0
 	return Config.CALM_M
