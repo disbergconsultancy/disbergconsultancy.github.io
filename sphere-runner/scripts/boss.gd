@@ -19,6 +19,9 @@ var _flash_t := 0.0
 var _body: Node3D
 var _mats: Array[StandardMaterial3D] = []
 var _rng := RandomNumberGenerator.new()
+var _last_phase := 0
+var _used := {}               # signature moves already announced this chase
+var _lava_until := -1.0       # chase metres until which a lava lane is active
 
 
 func setup(g: Node) -> void:
@@ -102,6 +105,9 @@ func start_fight() -> void:
 	dist = Config.THEME["boss_loops"] * Config.BOSS_LOOP_M
 	done = 0.0
 	_attack_t = 0.4
+	_last_phase = 0
+	_used = {}
+	_lava_until = -1.0
 	_stomp_t = 0.0
 	game.hud.flash("CATCH THE\n%s" % Config.THEME["boss"]["name"])
 
@@ -159,6 +165,14 @@ func update(dt: float) -> void:
 	_update_throws(dt)
 
 
+## Current phase: 1 = base throws, 2 = signature moves unlocked, 3 = enraged.
+func boss_phase() -> int:
+	var p := progress()
+	return 3 if p >= Config.BOSS_PHASES[2] else 2 if p >= Config.BOSS_PHASES[1] else 1
+
+
+## Picks the next move from this boss's base throws (+ signature moves from phase 2),
+## and waits until it has earned enough threat budget for it.
 func _schedule(dt: float) -> void:
 	var a := ahead()
 	var planet: Planet = game.planet
@@ -174,37 +188,131 @@ func _schedule(dt: float) -> void:
 	if _attack_t > 0.0:
 		return
 	var bt: Dictionary = Config.THEME["boss"]
+	var ph := boss_phase()
+	if ph != _last_phase:
+		_last_phase = ph
+		if ph == 3:
+			game.hud.pop("ENRAGED!")
 	# Land between the runner and the boss, as far ahead as possible (more warning).
 	var target := minf(30.0 + game.st.get("throw_lead", 0.0), a - Config.BOSS_SIZE / 2.0 - 2.0)   # Read the Throw: further ahead
-	var lvl := int(progress() * Config.THEME["boss_loops"])
-	var last: bool = lvl >= Config.THEME["boss_loops"] - 1
-	_attack_t = maxf(14.0, game.speed * (1.15 - 0.07 * lvl - (0.1 if last else 0.0)) * bt["gap_mul"]) / maxf(game.speed, 1.0)
 	if target < 13.0:
+		_attack_t = 0.3
 		return              # about to pass it: no more throws
-	# Each boss has its own mix of throws (the first boss never throws 2-lane walls).
-	var throws: Dictionary = bt["throws"]
-	var total := 0.0
-	for v in throws.values():
-		total += v
-	var roll := _rng.randf() * total
-	var kind := "smash"
-	for k in throws:
-		roll -= throws[k]
-		if roll < 0.0:
-			kind = k
-			break
+	var pool: Dictionary = bt["throws"].duplicate()
+	if ph >= 2:
+		pool.merge(bt["signature"])
+	if done < _lava_until:
+		pool.erase("block")   # a lava lane is active: never close the other two lanes
+	var kind := _pick(pool)
 	if kind == "stomp" and (_stomp_t > 0.0 or a < 22.0):
 		kind = "smash"
-	if kind == "stomp":
-		_stomp_t = 0.8
-		return
-	_throw(kind, game.angle + target / planet.radius)
-	# Later in the chase: combos (a second throw right behind the first), if this boss does them.
-	if lvl >= 1 and target > 20.0 and _rng.randf() < bt["combo"] * (1.6 if last else 1.0):
-		_throw("smash" if throws["block"] == 0 or _rng.randf() < 0.5 else "block", game.angle + (target - 9.0) / planet.radius)
+	if kind == "rolling_boulder" and a < 30.0:
+		kind = "smash"        # needs room to roll toward you
+	# Threat budget: the move's cost sets how long until the next one (minimum ~14 m apart).
+	var rate: float = bt["rate"] * (1.25 if ph == 3 else 1.1 if ph == 2 else 1.0)
+	_attack_t = maxf(Config.BOSS_MOVES[kind]["cost"] / rate, 14.0 / maxf(game.speed, 1.0))
+	var label: String = Config.BOSS_MOVES[kind]["label"]
+	if label != "" and not _used.has(kind):
+		_used[kind] = true
+		game.hud.flash(label + "!")    # announce a signature move the first time
+	match kind:
+		"stomp":
+			_stomp_t = 0.8
+			return
+		"rolling_boulder":
+			_rolling_boulder(a)
+			return
+		"lava_trail":
+			_lava_trail(target)
+			return
+	var safe := _throw(kind, game.angle + target / planet.radius)
+	# Later phases: combos (a second throw right behind the first), if this boss does them.
+	# Fair-play: the combo keeps the first throw's safe lane free, so one answer covers both.
+	if ph >= 2 and target > 20.0 and _rng.randf() < bt["combo"] * (1.6 if ph == 3 else 1.0):
+		var combo_kind := "smash" if bt["throws"]["block"] == 0 or done < _lava_until or _rng.randf() < 0.5 else "block"
+		_throw(combo_kind, game.angle + (target - 9.0) / planet.radius, safe)
 
 
-func _throw(kind: String, phi: float) -> void:
+func _pick(pool: Dictionary) -> String:
+	var total := 0.0
+	for v in pool.values():
+		total += v
+	var roll := _rng.randf() * total
+	for k in pool:
+		roll -= pool[k]
+		if roll < 0.0:
+			return k
+	return "smash"
+
+
+# --- Signature moves ---------------------------------------------------
+
+## Rolling boulder (Sand Colossus): rolls toward you down one lane and switches to an
+## adjacent lane once. Before the switch it wobbles and a red marker shows the new lane.
+func _rolling_boulder(a: float) -> void:
+	var planet: Planet = game.planet
+	var lane: int = [-1, 0, 1][_rng.randi() % 3]
+	var to: int = lane + (1 if lane == -1 else -1 if lane == 1 else [-1, 1][_rng.randi() % 2])
+	var it := planet.add_item("ROLLER", game.angle + (a - Config.BOSS_SIZE / 2.0 - 1.0) / planet.radius, Config.lane_x(lane), {"w": 2.0})
+	it.boss = true
+	it.vel = 6.0                       # rolls toward the runner on top of the world's motion
+	it.set_meta("to_x", Config.lane_x(to))
+	it.set_meta("switch_at", 18.0)     # metres ahead of the runner where it changes lane
+	it.set_meta("warn_at", 28.0)       # the warning starts here (~1 s before the switch)
+	_wind_t = 0.0
+
+
+## Lava trail (Magma Giant): a red stripe marks one lane for 20 m, then it turns to lava.
+## Answer: stay out of that lane (or jump across where it ends).
+func _lava_trail(target: float) -> void:
+	var planet: Planet = game.planet
+	var lane: int = [-1, 0, 1][_rng.randi() % 3]
+	var start := maxf(14.0, target - 14.0)
+	var it := planet.add_item("LAVA", game.angle + (start + 10.0) / planet.radius, Config.lane_x(lane))
+	it.boss = true
+	it.set_meta("arm_t", 0.9)          # warning time before it becomes deadly
+	planet.set_lava_armed(it, false)
+	_lava_until = done + start + 20.0 + 5.0
+	_wind_t = 0.0
+
+
+func _update_signature(it: Item, dt: float) -> void:
+	var planet: Planet = game.planet
+	if it.kind == "ROLLER":
+		var d: float = game._ahead_m(it)
+		var to_x: float = it.get_meta("to_x")
+		if d < it.get_meta("warn_at") and not it.has_meta("warned"):
+			it.set_meta("warned", true)
+			var m := planet.add_item("MARK", it.phi, to_x, {"w": Config.LANE_W * 0.9})
+			m.boss = true
+			m.vel = it.vel
+			it.marks = [m]
+		if d < it.get_meta("switch_at"):
+			it.x = move_toward(it.x, to_x, 10.0 * dt)
+			for m in it.marks:
+				planet.hide_item(m)
+		elif it.has_meta("warned"):
+			it.x = it.cx + sin(Time.get_ticks_msec() / 40.0) * 0.15   # wobble before switching
+		planet.place_item(it)
+		for p in it.parts:   # roll
+			p["node"].rotate_object_local(Vector3.RIGHT, -dt * (game.speed + it.vel) / 1.1)
+	elif it.kind == "LAVA" and it.has_meta("arm_t"):
+		var t: float = it.get_meta("arm_t") - dt
+		if t <= 0.0:
+			it.remove_meta("arm_t")
+			planet.set_lava_armed(it, true)
+			game.sfx.play("smash")
+		else:
+			it.set_meta("arm_t", t)
+
+
+func is_armed(it: Item) -> bool:
+	return not it.has_meta("arm_t")
+
+
+## Throws one attack landing at phi. keep_free: a lane that must stay open (combos), -2 = any.
+## Returns a lane that is safe from this throw.
+func _throw(kind: String, phi: float, keep_free := -2) -> int:
 	var planet: Planet = game.planet
 	var marks: Array = []
 	var mark := func(lanes: Array) -> void:
@@ -214,20 +322,27 @@ func _throw(kind: String, phi: float) -> void:
 	var free_lane := 0
 	match kind:
 		"smash":   # red boulder on one lane: switch lanes
-			var l: int = [-1, 0, 1][_rng.randi() % 3]
+			var l: int = ([-1, 0, 1].filter(func(x): return x != keep_free)).pick_random()
 			mark.call([l])
 			it = planet.add_item("FIST", phi, Config.lane_x(l), {"w": 2.0})
 			free_lane = ([-1, 0, 1].filter(func(x): return x != l)).pick_random()
 		"block":   # red wall over two lanes: take the open one
-			var open: int = [-1, 0, 1][_rng.randi() % 3]
+			var open: int = keep_free if keep_free != -2 else [-1, 0, 1][_rng.randi() % 3]
 			var lanes := [-1, 0, 1].filter(func(x): return x != open)
 			mark.call(lanes)
-			it = planet.add_item("BLOCK", phi, (Config.lane_x(lanes[0]) + Config.lane_x(lanes[1])) / 2.0, {"w": Config.LANE_W * 1.9})
 			free_lane = open
+			if open == 0:
+				# Middle lane open: two separate walls on the outer lanes (one wide wall would cover all three).
+				var side := planet.add_item("BLOCK", phi, Config.lane_x(-1))
+				side.boss = true
+				side.fly_t = 0.0
+				it = planet.add_item("BLOCK", phi, Config.lane_x(1))
+			else:
+				it = planet.add_item("BLOCK", phi, (Config.lane_x(lanes[0]) + Config.lane_x(lanes[1])) / 2.0, {"w": Config.LANE_W * 1.9})
 		_:         # across the track: jump the log, slide under the bar
 			mark.call([-1, 0, 1])
 			it = planet.add_item("SWEEPLOW" if kind == "sweep_low" else "SWEEPHIGH", phi, 0.0, {"w": Config.TRACK_HALF * 2.0 - 0.4})
-			free_lane = [-1, 0, 1][_rng.randi() % 3]
+			free_lane = keep_free if keep_free != -2 else [-1, 0, 1][_rng.randi() % 3]
 	it.boss = true
 	it.fly_t = 0.0
 	it.marks = marks
@@ -239,6 +354,7 @@ func _throw(kind: String, phi: float) -> void:
 			planet.add_item("COIN", phi + m / planet.radius, Config.lane_x(free_lane), {"y0": 0.4})
 			m += 1.6
 	_wind_t = 0.0
+	return free_lane
 
 
 ## Throws fly in an arc from the boss onto their markers, then stay as obstacles.
@@ -249,6 +365,10 @@ func _update_throws(dt: float) -> void:
 		if it.vel > 0.0:
 			it.phi -= it.vel * dt / planet.radius
 			planet.place_item(it)
+		if it.kind == "ROLLER" or it.kind == "LAVA":
+			if it.alive:
+				_update_signature(it, dt)
+			continue
 		if it.fly_t < 0.0:
 			continue
 		it.fly_t = minf(it.fly_dur, it.fly_t + dt)

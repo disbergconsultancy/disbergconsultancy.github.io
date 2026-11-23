@@ -14,7 +14,15 @@ The Godot project (`sphere-runner/`) is the main version; the web prototype stay
 
 ## Next (in priority order)
 
-### 1. Boss system: unique bosses with signature moves
+### 1. Boss system: unique bosses with signature moves (IN PROGRESS)
+**Built (Godot):** data model per boss (archetype, base throws, signature moves, rate), phases (base / signature
+unlocked at 30% / enraged at 80%), threat budget (move costs), Rolling boulder (Sand Colossus), Lava trail (Magma
+Giant), fairness check with a bot (10 chases per boss; all bosses 10/10). The check found and fixed an impossible
+attack: a 2-lane wall with the middle lane open covered all three lanes (also fixed in the web prototype); combos now
+keep the first throw's safe lane open.
+**Still to do:** the other signature moves (Vine sweep, Ice lane, Meteor shower, Quake rhythm, Decoy marker,
+Gate slam), the other archetypes, the boss forge for endless play.
+
 Goal: every boss feels different, and we can make many more without hand-building each one.
 A boss is **composed from parts**, all data-driven:
 

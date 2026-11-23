@@ -311,6 +311,16 @@ func add_item(kind: String, phi: float, x: float, opts := {}) -> Item:
 			red.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 			mm.material_override = red
 			it.parts.append({"node": mm, "dm": 0.0, "y": it.y0 + h / 2.0})
+		"ROLLER":
+			it.parts.append({"node": _box(Vector3(w, h, depth), color), "dm": 0.0, "y": it.y0 + h / 2.0})
+			for yy in [0.35, h - 0.35]:
+				it.parts.append({"node": _box(Vector3(w + 0.05, 0.16, depth + 0.05), Color("8a1a1a")), "dm": 0.0, "y": yy})
+		"LAVA":
+			# Segments so the 20 m stripe follows the curve; red warning look until it is armed.
+			var n := maxi(1, ceili(depth / 2.5))
+			var seg := depth / n
+			for i in n:
+				it.parts.append({"node": _box(Vector3(w, 0.06, seg + 0.02), color, 1.4), "dm": -depth / 2.0 + seg * (i + 0.5), "y": 0.03})
 		"SHOCK":
 			it.parts.append({"node": _box(Vector3(w, h, depth), theme["boss"]["wave"], 1.0), "dm": 0.0, "y": it.y0 + h / 2.0})
 		"POWER":
@@ -355,6 +365,16 @@ func _add_details(it: Item, kind: String, w: float, h: float, depth: float) -> v
 		"FIST", "BLOCK":   # boulder / wall bands
 			band.call(y0 + h - 0.15, Color("8a1a1a"), 0.18)
 			band.call(y0 + 0.5, Color("8a1a1a"), 0.12)
+
+
+## Lava stripe: a translucent red warning first, glowing lava once it is deadly.
+func set_lava_armed(it: Item, armed: bool) -> void:
+	var warn := StandardMaterial3D.new()
+	warn.albedo_color = Color(1, 0.16, 0.16, 0.5)
+	warn.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	warn.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	for p in it.parts:
+		p["node"].material_override = mat(Config.KIND["LAVA"]["color"], 1.4) if armed else warn
 
 
 func place_item(it: Item) -> void:

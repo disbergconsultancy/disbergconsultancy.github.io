@@ -540,7 +540,11 @@ function attackAt(kind, phi) {
   } else if (kind === 'block') {              // red wall over two lanes: take the open one
     const open = pick([-1, 0, 1]), lanes = [-1, 0, 1].filter(x => x !== open);
     markLanes(phi, lanes, marks);
-    addItem('BLOCK', phi, (LX(lanes[0]) + LX(lanes[1])) / 2, { w: LANE_W * 1.9, len: 1.6, extra: extra() });
+    if (open === 0) {
+      // Middle lane open: two separate walls on the outer lanes (one wide wall would cover all three).
+      addItem('BLOCK', phi, LX(-1), { len: 1.6, extra: extra() });
+      addItem('BLOCK', phi, LX(1), { len: 1.6, extra: extra() });
+    } else addItem('BLOCK', phi, (LX(lanes[0]) + LX(lanes[1])) / 2, { w: LANE_W * 1.9, len: 1.6, extra: extra() });
     coinLine(phi, open, -3, 3);
   } else {                                    // across the whole track: jump the log, slide under the bar
     const low = kind === 'sweepLow';

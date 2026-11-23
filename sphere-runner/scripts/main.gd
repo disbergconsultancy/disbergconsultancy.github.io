@@ -65,6 +65,7 @@ var hang_used := 0.0
 var slip_t := 0.0
 var smashes := 0
 var stumbles_left := 0
+var last_hit := ""             # what ended the last run (self-test reports)
 var _sky_mat: ProceduralSkyMaterial
 var _env: Environment         # [{ "node": MeshInstance3D, "v": Vector3, "life": float }]
 
@@ -132,6 +133,8 @@ func _ready() -> void:
 				_test["ability"] = true
 			elif a.begins_with("boss="):     # start a boss test on planet N instead of a normal run
 				_test["boss"] = int(a.substr(5))
+			elif a.begins_with("move="):     # force this boss move for the shot (e.g. move=rolling_boulder)
+				_test["move"] = a.substr(5)
 			elif a == "skills" or a == "shop" or a == "over":
 				_test["screen"] = a
 
@@ -306,7 +309,7 @@ func crash(it: Item = null) -> void:
 		sfx.play("shield")
 		return
 	# Stumble guard (core shop): a small hit knocks the obstacle over instead of ending the run.
-	if stumbles_left > 0 and it and it.kind in ["LOW", "HIGH", "FIST", "SWEEPLOW", "SWEEPHIGH", "SHOCK"]:
+	if stumbles_left > 0 and it and it.kind in ["LOW", "HIGH", "FIST", "SWEEPLOW", "SWEEPHIGH", "SHOCK", "ROLLER"]:
 		stumbles_left -= 1
 		var lv: int = Progress.core["stumble"]
 		planet.hide_item(it)
@@ -325,6 +328,7 @@ func crash(it: Item = null) -> void:
 		Input.vibrate_handheld(40)
 		return
 	state = "hit"
+	last_hit = it.kind if it else "?"
 	sfx.play("crash")
 	hit_t = Config.HIT_PAUSE
 	shake = 0.5
@@ -771,7 +775,7 @@ func _collide() -> void:
 		var overlap_z := absf(d) <= it.hd + hd
 		var overlap_x := absf(it.x - px) <= it.hw + hw
 		# Close calls: clearing an obstacle by a small margin.
-		if it.kind in Config.HAZARDS and not it.passed and it.kind != "PLATFORM" and it.kind != "PIT":
+		if it.kind in Config.HAZARDS and not it.passed and it.kind != "PLATFORM" and not it.kind in Config.FLOOR_HAZARDS:
 			if overlap_z:
 				if not grounded and py >= it.y1 - 0.15 and absf(it.x - px) < it.hw + Config.PLAYER_SIZE.x / 2.0:
 					it.set_meta("vaulted", true)
@@ -806,9 +810,9 @@ func _collide() -> void:
 		match it.kind:
 			"RAMP":
 				continue
-			"PIT":
-				# Glowing floor: deadly with your feet on it (thinner than the hitbox margin).
-				if py <= 0.05 and pw["orbit"] <= 0.0:
+			"PIT", "LAVA":
+				# Glowing floor / lava: deadly with your feet on it (thinner than the hitbox margin).
+				if py <= 0.05 and pw["orbit"] <= 0.0 and boss.is_armed(it):
 					crash(it)
 					if state != "run":
 						return
@@ -934,6 +938,89 @@ func _sim(seconds: float, dt: float) -> float:
 		_update_debris(gdt)
 		peak = maxf(peak, py)
 	return peak
+
+
+## A simple bot with perfect information and instant reactions: it avoids what needs a lane
+## change, jumps what can be jumped and slides under bars. Used to check bosses are beatable.
+func _bot_drive() -> void:
+	var lethal := {-1: 99.0, 0: 99.0, 1: 99.0}     # nearest "switch lane" hazard per lane
+	var jump_d := 99.0
+	var slide_d := 99.0
+	for it in planet.items:
+		if not it.alive or not (it.kind in Config.HAZARDS):
+			continue
+		var d := _ahead_m(it)
+		if d < -(it.hd + 0.5) or d > 30.0:
+			continue
+		var near := d - it.hd          # distance to its front edge
+		for l in [-1, 0, 1]:
+			var xs: Array = [it.x]
+			if it.kind == "ROLLER" and it.has_meta("warned"):
+				xs.append(it.get_meta("to_x"))
+			var hit := false
+			for x in xs:
+				if absf(x - Config.lane_x(l)) < it.hw + 0.5:
+					hit = true
+			if not hit:
+				continue
+			var blocks: bool = it.kind in ["WALL", "BLOCK", "FIST", "ROLLER", "MOVER", "LAVA", "PLATFORM"] or (it.kind == "PIT" and it.hd > 2.0)
+			if blocks:
+				lethal[l] = minf(lethal[l], maxf(near, 0.0))
+			elif l == lane:
+				if it.kind in ["HIGH", "SWEEPHIGH"]:
+					slide_d = minf(slide_d, near)
+				else:
+					jump_d = minf(jump_d, near)
+	if lethal[lane] < 14.0:
+		var best := lane
+		for l in [-1, 0, 1]:
+			if lethal[l] > lethal[best] + 0.5 and (absi(l - lane) == 1 or lethal[0] > 6.0):
+				best = l
+		if best != lane:
+			_on_action("left" if best < lane else "right")
+	if jump_d < 3.4 and jump_d > -0.5 and grounded:
+		_on_action("up")
+	elif slide_d < 3.2 and slide_d > -0.5 and slide_t <= 0.0:
+		_on_action("down")
+
+
+func _autotest_fairness(dt: float) -> void:
+	var saved_core: Dictionary = Progress.core.duplicate()
+	Progress.core["stumble"] = 0
+	for i in Config.THEMES.size():
+		var wins := 0
+		var deaths := {}
+		var signature_seen := {}
+		for attempt in 10:
+			god = true
+			start_boss_test(i)
+			var guard := 0
+			while boss.phase != "fight" and guard < 60 * 60:
+				step(dt)
+				guard += 1
+			god = false
+			var t := 0.0
+			while state == "run" and boss.phase == "fight" and t < 120.0:
+				_bot_drive()
+				step(dt)
+				t += dt
+				for it in planet.items:
+					if it.kind == "ROLLER" or it.kind == "LAVA":
+						signature_seen[it.kind] = true
+			if boss.kills > 0:
+				wins += 1
+			else:
+				deaths[last_hit] = deaths.get(last_hit, 0) + 1
+				if i == 2 and OS.get_cmdline_user_args().has("--debugfair"):
+					var near := []
+					for it in planet.items:
+						var dd := _ahead_m(it)
+						if it.alive and it.boss and dd > -6.0 and dd < 30.0 and it.kind != "COIN":
+							near.append("%s x=%.1f d=%.1f fly=%.2f" % [it.kind, it.x, dd, it.fly_t])
+					print("  death: lane %d px %.2f py %.2f speed %.1f | %s" % [lane, px, py, speed, near])
+		print("AUTOTEST fairness %s: bot beat it %d/10, deaths %s, signature moves seen: %s" % [
+			Config.THEMES[i]["boss"]["name"], wins, deaths, ", ".join(signature_seen.keys())])
+	Progress.core = saved_core
 
 
 func _set_build(c: String, alloc: Dictionary) -> void:
@@ -1162,6 +1249,12 @@ func _autotest_tick() -> void:
 				start_run()
 			var n := int(_test["t"] * 60.0)
 			for i in n:
+				if _test.has("move") and boss.phase == "fight" and not _test.has("moved"):
+					_test["moved"] = true
+					if _test["move"] == "rolling_boulder":
+						boss._rolling_boulder(boss.ahead())
+					else:
+						boss._lava_trail(24.0)
 				if i == n - 90:
 					if _test.has("power"):
 						activate(_test["power"])
@@ -1251,6 +1344,9 @@ func _autotest_tick() -> void:
 		_test["phase"] = "phase4"
 	elif _test["phase"] == "phase4":
 		_autotest_phase4(dt)
+		_test["phase"] = "fair"
+	elif _test["phase"] == "fair":
+		_autotest_fairness(dt)
 		_test["phase"] = "real"
 	elif _test["phase"] == "real":
 		god = false

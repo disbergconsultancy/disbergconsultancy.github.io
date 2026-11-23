@@ -59,9 +59,29 @@ const KIND := {
 	"SWEEPHIGH": {"h": 1.4, "y0": 1.0, "d": 1.2, "color": Color("d940cc")},
 	"SHOCK": {"h": 0.5, "y0": 0.0, "d": 0.7, "color": Color.WHITE},
 	"MARK": {"h": 0.04, "y0": 0.02, "d": 2.6, "color": Color("ff2a2a")},
+	# Signature moves
+	"ROLLER": {"h": 2.2, "y0": 0.0, "d": 2.2, "color": Color("d93333")},
+	"LAVA": {"h": 0.06, "y0": 0.0, "d": 20.0, "color": Color("ff4a1a")},
 }
-const HAZARDS := ["LOW", "HIGH", "WALL", "MOVER", "PIT", "PLATFORM", "FIST", "BLOCK", "SWEEPLOW", "SWEEPHIGH", "SHOCK"]
-const SMASHABLE := ["LOW", "HIGH", "WALL", "MOVER", "FIST", "BLOCK", "SWEEPLOW", "SWEEPHIGH", "SHOCK"]
+const HAZARDS := ["LOW", "HIGH", "WALL", "MOVER", "PIT", "PLATFORM", "FIST", "BLOCK", "SWEEPLOW", "SWEEPHIGH", "SHOCK", "ROLLER", "LAVA"]
+const SMASHABLE := ["LOW", "HIGH", "WALL", "MOVER", "FIST", "BLOCK", "SWEEPLOW", "SWEEPHIGH", "SHOCK", "ROLLER"]
+const FLOOR_HAZARDS := ["PIT", "LAVA"]   # deadly when your feet touch them
+
+# --- Boss moves -------------------------------------------------------
+# Every boss is composed from: an archetype, base throws, signature moves, phases and a threat budget.
+# Each move costs threat; a boss earns `rate` threat per second (more in later phases) and spends it.
+# Answers always use existing moves: switch lane (red), jump (orange), slide (purple).
+const BOSS_MOVES := {
+	"smash": {"cost": 1.0, "label": ""},          # boulder on one lane
+	"block": {"cost": 1.3, "label": ""},          # wall over two lanes
+	"sweep_low": {"cost": 1.0, "label": ""},      # log across the track
+	"sweep_high": {"cost": 1.0, "label": ""},     # bar across the track
+	"stomp": {"cost": 1.3, "label": ""},          # wave rolling toward you
+	"rolling_boulder": {"cost": 1.8, "label": "ROLLING BOULDER"},   # rolls at you, switches lane once
+	"lava_trail": {"cost": 2.0, "label": "LAVA TRAIL"},             # a lane of lava for 20 m
+}
+# Phases by chase progress: 1 = base throws, 2 = signature moves unlocked, 3 = enraged (faster, combos).
+const BOSS_PHASES := [0.0, 0.3, 0.8]
 
 # --- Power-ups --------------------------------------------------------
 const POWERS := {
@@ -111,28 +131,32 @@ const THEMES := [
 		"props": {"tree": 5, "tree2": 4, "pine": 4, "rock": 3, "house": 2, "bush": 4},
 		"laps_to_boss": 2, "boss_loops": 3,
 		"boss": {"name": "STONE GOLEM", "body": Color("8a8f7a"), "eye": Color("ffe14d"), "wave": Color("a8ff6a"), "glow": 0.0,
-			"throws": {"smash": 45, "block": 0, "sweep_low": 25, "sweep_high": 20, "stomp": 10}, "combo": 0.0, "gap_mul": 1.3}},
+			"throws": {"smash": 45, "block": 0, "sweep_low": 25, "sweep_high": 20, "stomp": 10}, "combo": 0.0, "rate": 0.75,
+			"archetype": "gate_walker", "signature": {}}},
 	{"name": "DUNES", "radius": 36.0, "sky_top": Color("f0a05a"), "sky_bottom": Color("fbe3b8"),
 		"ground": [Color("e8c98a"), Color("dcb672"), Color("c99a5a")], "water": Color("3fb8c0"), "shore": Color("9cc47a"),
 		"track": Color("6e4e3e"), "curb": Color("c9a06a"), "dash": Color("ffe9c2"), "glow_road": false,
 		"props": {"cactus": 5, "pyramid": 1, "palm": 3, "mesa": 2, "dune": 5},
 		"laps_to_boss": 2, "boss_loops": 4,
 		"boss": {"name": "SAND COLOSSUS", "body": Color("c9a060"), "eye": Color("3fe0ff"), "wave": Color("ffd27a"), "glow": 0.0,
-			"throws": {"smash": 38, "block": 10, "sweep_low": 20, "sweep_high": 20, "stomp": 12}, "combo": 0.12, "gap_mul": 1.15}},
+			"throws": {"smash": 38, "block": 10, "sweep_low": 20, "sweep_high": 20, "stomp": 12}, "combo": 0.12, "rate": 0.85,
+			"archetype": "gate_walker", "signature": {"rolling_boulder": 30}}},
 	{"name": "GLACIER", "radius": 54.0, "sky_top": Color("6f9fd8"), "sky_bottom": Color("e6f2fb"),
 		"ground": [Color("f4fbff"), Color("e2eef7"), Color("cfe0ee")], "water": Color("9cc8e8"), "shore": Color.WHITE,
 		"track": Color("5d7ea8"), "curb": Color.WHITE, "dash": Color("e6f6ff"), "glow_road": false,
 		"props": {"spike": 4, "snowpine": 5, "igloo": 1, "ice_rock": 3, "snowman": 1},
 		"laps_to_boss": 3, "boss_loops": 4,
 		"boss": {"name": "ICE TITAN", "body": Color("bfe3ff"), "eye": Color("29a0ff"), "wave": Color("9fe8ff"), "glow": 0.15,
-			"throws": {"smash": 32, "block": 20, "sweep_low": 16, "sweep_high": 16, "stomp": 16}, "combo": 0.25, "gap_mul": 1.05}},
+			"throws": {"smash": 32, "block": 20, "sweep_low": 16, "sweep_high": 16, "stomp": 16}, "combo": 0.25, "rate": 0.95,
+			"archetype": "gate_walker", "signature": {}}},
 	{"name": "EMBER", "radius": 30.0, "sky_top": Color("1a1024"), "sky_bottom": Color("5a2a3a"),
 		"ground": [Color("4a3030"), Color("3a2626"), Color("5a3a32")], "water": Color("ff5a1f"), "shore": Color("2a1a1a"),
 		"track": Color("2c2a30"), "curb": Color("ff7a2a"), "dash": Color("ff9a4a"), "glow_road": true,
 		"props": {"volcano": 2, "shard": 4, "deadtree": 4, "lava": 3, "ash_rock": 4},
 		"laps_to_boss": 3, "boss_loops": 5,
 		"boss": {"name": "MAGMA GIANT", "body": Color("3a2a2a"), "eye": Color("ffc400"), "wave": Color("ff7a2a"), "glow": 0.8,
-			"throws": {"smash": 30, "block": 22, "sweep_low": 15, "sweep_high": 15, "stomp": 18}, "combo": 0.35, "gap_mul": 1.0}},
+			"throws": {"smash": 30, "block": 22, "sweep_low": 15, "sweep_high": 15, "stomp": 18}, "combo": 0.35, "rate": 1.05,
+			"archetype": "gate_walker", "signature": {"lava_trail": 30}}},
 ]
 var THEME: Dictionary = THEMES[0]    # the current planet
 
