@@ -16,12 +16,13 @@ The Godot project (`sphere-runner/`) is the main version; the web prototype stay
 
 ### 1. Boss system: unique bosses with signature moves (IN PROGRESS)
 **Built (Godot):** data model per boss (archetype, base throws, signature moves, rate), phases (base / signature
-unlocked at 30% / enraged at 80%), threat budget (move costs), Rolling boulder (Sand Colossus), Lava trail (Magma
-Giant), fairness check with a bot (10 chases per boss; all bosses 10/10). The check found and fixed an impossible
-attack: a 2-lane wall with the middle lane open covered all three lanes (also fixed in the web prototype); combos now
-keep the first throw's safe lane open.
-**Still to do:** the other signature moves (Vine sweep, Ice lane, Meteor shower, Quake rhythm, Decoy marker,
-Gate slam), the other archetypes, the boss forge for endless play.
+unlocked at 30% / enraged at 80%), threat budget (move costs), and all eight signature moves:
+Stone Golem: Vine sweep; Sand Colossus: Rolling boulder, Meteor shower; Ice Titan: Ice lane, Quake rhythm, Decoy;
+Magma Giant: Lava trail, Quake rhythm, Decoy, Gate slam (at the final pass). Fairness check with a bot (10 chases per
+boss; all bosses 10/10). The check found and fixed an impossible attack (a 2-lane wall with the middle lane open
+covered all three lanes, also fixed in the web prototype) and a quake rhythm overlapping the next throw; combos keep
+the first throw's safe lane open, and a multi-part move blocks other attacks until it is over.
+**Still to do:** the other archetypes, the boss forge for endless play.
 
 Goal: every boss feels different, and we can make many more without hand-building each one.
 A boss is **composed from parts**, all data-driven:
@@ -38,12 +39,12 @@ A boss is **composed from parts**, all data-driven:
 **Signature move library** (each has a clear warning and an answer with the moves players already know):
 - *Rolling boulder* (Dunes): a boulder rolls toward you down one lane and switches lane once (telegraphed). Answer: switch lane at the right moment.
 - *Vine sweep* (Meadow): vines grow across two lanes at slide height. Answer: slide, or take the third lane.
-- *Ice lane* (Glacier): one lane freezes for a few seconds; lane changes into it slide you an extra lane. Answer: plan your route.
+- *Ice lane* (Glacier): one lane freezes for 16 m with a boulder at its end; no lane changes while on the ice. Answer: leave that lane before the ice.
 - *Lava trail* (Ember): the boss leaves a glowing floor strip along a lane for ~20 m. Answer: stay out of it or jump across.
-- *Meteor shower*: 3-5 small markers land in sequence across lanes. Answer: weave.
+- *Meteor shower* (Dunes): four small meteors thrown one after another, never twice in the same lane. Answer: weave.
 - *Quake rhythm*: three stomp waves in a beat. Answer: jump in rhythm.
 - *Decoy marker* (late bosses): a marker shifts to another lane just before the throw lands. Answer: watch the throw, not only the marker.
-- *Gate slam* (Gate-walker): the legs close in, leaving one moving gap. Answer: follow the gap.
+- *Gate slam* (Gate-walker): at the final pass the legs slam onto the track leaving one gap (green marker); the gap moves once. Answer: follow the gap.
 
 **Fair-play rules** (checked automatically in the self-test):
 - At least ~1 s of warning at the current speed; markers always land between you and the boss.

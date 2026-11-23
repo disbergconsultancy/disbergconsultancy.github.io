@@ -306,7 +306,7 @@ func add_item(kind: String, phi: float, x: float, opts := {}) -> Item:
 			bm.size = Vector3(w, h, depth)
 			mm.mesh = bm
 			var red := StandardMaterial3D.new()
-			red.albedo_color = Color(1, 0.16, 0.16, 0.55)
+			red.albedo_color = Color(0.2, 1, 0.4, 0.6) if opts.get("safe", false) else Color(1, 0.16, 0.16, 0.55)
 			red.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 			red.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 			mm.material_override = red
@@ -321,6 +321,18 @@ func add_item(kind: String, phi: float, x: float, opts := {}) -> Item:
 			var seg := depth / n
 			for i in n:
 				it.parts.append({"node": _box(Vector3(w, 0.06, seg + 0.02), color, 1.4), "dm": -depth / 2.0 + seg * (i + 0.5), "y": 0.03})
+		"VINE":
+			# Purple (slide) bar on posts, wrapped in green leaves.
+			it.parts.append({"node": _box(Vector3(w, h, depth), color), "dm": 0.0, "y": it.y0 + h / 2.0})
+			for yy in [it.y0 + 0.2, it.y0 + h - 0.25]:
+				it.parts.append({"node": _box(Vector3(w + 0.08, 0.14, depth + 0.08), Color("3f9d3f")), "dm": 0.0, "y": yy})
+			for sx in [-1.0, 1.0]:
+				it.parts.append({"node": _box(Vector3(0.2, it.y0, 0.2), Color("2f7a2f")), "dm": 0.0, "y": it.y0 / 2.0, "dx": sx * (w / 2.0 - 0.12)})
+		"ICE":
+			var n2 := maxi(1, ceili(depth / 2.5))
+			var seg2 := depth / n2
+			for i in n2:
+				it.parts.append({"node": _box(Vector3(w, 0.05, seg2 + 0.02), color, 0.6), "dm": -depth / 2.0 + seg2 * (i + 0.5), "y": 0.03})
 		"SHOCK":
 			it.parts.append({"node": _box(Vector3(w, h, depth), theme["boss"]["wave"], 1.0), "dm": 0.0, "y": it.y0 + h / 2.0})
 		"POWER":
@@ -375,6 +387,16 @@ func set_lava_armed(it: Item, armed: bool) -> void:
 	warn.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	for p in it.parts:
 		p["node"].material_override = mat(Config.KIND["LAVA"]["color"], 1.4) if armed else warn
+
+
+## Ice stripe: pale frost first, solid glowing ice once it is active.
+func set_ice_armed(it: Item, armed: bool) -> void:
+	var frost := StandardMaterial3D.new()
+	frost.albedo_color = Color(0.75, 0.95, 1.0, 0.45)
+	frost.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	frost.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	for p in it.parts:
+		p["node"].material_override = mat(Config.KIND["ICE"]["color"], 0.6) if armed else frost
 
 
 func place_item(it: Item) -> void:

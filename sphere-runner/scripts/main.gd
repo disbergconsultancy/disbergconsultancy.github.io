@@ -309,7 +309,7 @@ func crash(it: Item = null) -> void:
 		sfx.play("shield")
 		return
 	# Stumble guard (core shop): a small hit knocks the obstacle over instead of ending the run.
-	if stumbles_left > 0 and it and it.kind in ["LOW", "HIGH", "FIST", "SWEEPLOW", "SWEEPHIGH", "SHOCK", "ROLLER"]:
+	if stumbles_left > 0 and it and it.kind in ["LOW", "HIGH", "FIST", "SWEEPLOW", "SWEEPHIGH", "SHOCK", "ROLLER", "VINE"]:
 		stumbles_left -= 1
 		var lv: int = Progress.core["stumble"]
 		planet.hide_item(it)
@@ -425,6 +425,8 @@ func _on_action(dir: String) -> void:
 		return
 	match dir:
 		"left", "right":
+			if _on_ice():
+				return               # Ice lane: no switching while on the ice
 			var nl := clampi(lane + (-1 if dir == "left" else 1), -1, 1)
 			if nl != lane:
 				lane = nl
@@ -450,6 +452,15 @@ func _on_action(dir: String) -> void:
 			if not grounded:
 				vy = Config.SLAM_V * st["slam_mul"]
 			sfx.play("slide")
+
+
+func _on_ice() -> bool:
+	if not grounded:
+		return false
+	for it in planet.items:
+		if it.kind == "ICE" and it.alive and boss.is_armed(it) and absf(_ahead_m(it)) <= it.hd and absf(it.x - px) < 1.1:
+			return true
+	return false
 
 
 func _jump() -> void:
@@ -770,7 +781,7 @@ func _collide() -> void:
 			it.parts[0]["y"] = it.y0 + 0.225
 			planet.place_item(it)
 			d = _ahead_m(it)
-		if it.kind == "MARK" or it.fly_t >= 0.0:
+		if it.kind == "MARK" or it.kind == "ICE" or it.fly_t >= 0.0 or (it.kind != "LAVA" and not boss.is_armed(it)):
 			continue
 		var overlap_z := absf(d) <= it.hd + hd
 		var overlap_x := absf(it.x - px) <= it.hw + hw
@@ -947,7 +958,13 @@ func _bot_drive() -> void:
 	var jump_d := 99.0
 	var slide_d := 99.0
 	for it in planet.items:
-		if not it.alive or not (it.kind in Config.HAZARDS):
+		if not it.alive or not (it.kind in Config.HAZARDS or it.kind == "ICE"):
+			continue
+		if it.kind == "ICE":            # the bot treats an ice lane as blocked (a boulder waits at its end)
+			var dd := _ahead_m(it) - it.hd
+			for l in [-1, 0, 1]:
+				if absf(it.x - Config.lane_x(l)) < 1.0:
+					lethal[l] = minf(lethal[l], maxf(dd, 0.0))
 			continue
 		var d := _ahead_m(it)
 		if d < -(it.hd + 0.5) or d > 30.0:
@@ -963,11 +980,11 @@ func _bot_drive() -> void:
 					hit = true
 			if not hit:
 				continue
-			var blocks: bool = it.kind in ["WALL", "BLOCK", "FIST", "ROLLER", "MOVER", "LAVA", "PLATFORM"] or (it.kind == "PIT" and it.hd > 2.0)
+			var blocks: bool = it.kind in ["WALL", "BLOCK", "FIST", "ROLLER", "MOVER", "LAVA", "PLATFORM", "LEG"] or (it.kind == "PIT" and it.hd > 2.0)
 			if blocks:
 				lethal[l] = minf(lethal[l], maxf(near, 0.0))
 			elif l == lane:
-				if it.kind in ["HIGH", "SWEEPHIGH"]:
+				if it.kind in ["HIGH", "SWEEPHIGH", "VINE"]:
 					slide_d = minf(slide_d, near)
 				else:
 					jump_d = minf(jump_d, near)
@@ -999,14 +1016,19 @@ func _autotest_fairness(dt: float) -> void:
 				step(dt)
 				guard += 1
 			god = false
+			for it in planet.items:      # judge the boss only: drop leftover run obstacles from the run-up
+				if not it.boss and it.kind in Config.HAZARDS:
+					planet.hide_item(it)
 			var t := 0.0
 			while state == "run" and boss.phase == "fight" and t < 120.0:
 				_bot_drive()
 				step(dt)
 				t += dt
 				for it in planet.items:
-					if it.kind == "ROLLER" or it.kind == "LAVA":
-						signature_seen[it.kind] = true
+					if it.kind in ["ROLLER", "LAVA", "VINE", "ICE", "LEG"] or it.has_meta("decoy_to") or it.has_meta("meteor"):
+						signature_seen[it.kind + ("(decoy)" if it.has_meta("decoy_to") else "(meteor)" if it.has_meta("meteor") else "")] = true
+				if boss._stomp_t > 0.0 and boss._pending.size() > 0:
+					signature_seen["QUAKE"] = true
 			if boss.kills > 0:
 				wins += 1
 			else:
@@ -1251,10 +1273,7 @@ func _autotest_tick() -> void:
 			for i in n:
 				if _test.has("move") and boss.phase == "fight" and not _test.has("moved"):
 					_test["moved"] = true
-					if _test["move"] == "rolling_boulder":
-						boss._rolling_boulder(boss.ahead())
-					else:
-						boss._lava_trail(24.0)
+					boss.force_move(_test["move"])
 				if i == n - 90:
 					if _test.has("power"):
 						activate(_test["power"])
