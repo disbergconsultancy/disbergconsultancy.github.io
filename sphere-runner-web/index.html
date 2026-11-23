@@ -25,6 +25,19 @@
   #combo { position: fixed; left: calc(env(safe-area-inset-left) + 16px); top: calc(env(safe-area-inset-top) + 62px);
     font-size: 17px; font-weight: 900; color: #ffe14d; pointer-events: none; text-shadow: 0 2px 4px rgba(0,0,0,.6); }
   #combo .bar { height: 5px; background: #ffe14d; border-radius: 3px; margin-top: 3px; box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+  #focus { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity .25s;
+    box-shadow: inset 0 0 120px 30px rgba(60,120,255,.55); }
+  #meter { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 22px);
+    width: 200px; height: 18px; border-radius: 9px; background: rgba(0,0,0,.35); overflow: hidden; pointer-events: none; }
+  #meterFill { height: 100%; width: 0; background: #ffd23d; border-radius: 9px; }
+  #meterLabel { position: absolute; inset: 0; text-align: center; font-size: 11px; font-weight: 900; line-height: 18px;
+    color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.8); letter-spacing: .5px; }
+  #meter.ready { animation: pulse .6s infinite alternate; }
+  @keyframes pulse { from { transform: translateX(-50%) scale(1); } to { transform: translateX(-50%) scale(1.08); } }
+  .charpick { display: flex; gap: 6px; margin: 8px 0 4px; }
+  .charpick button { flex: 1; border: 2px solid transparent; border-radius: 10px; padding: 8px 4px; color: #fff; font-weight: 800; font-size: 14px; }
+  .charpick button.on { border-color: #fff; }
+  #charDesc { font-size: 12.5px !important; min-height: 52px; }
   #pauseBtn { position: fixed; right: calc(env(safe-area-inset-right) + 14px); bottom: calc(env(safe-area-inset-bottom) + 14px);
     width: 44px; height: 44px; border-radius: 22px; border: 0; background: rgba(0,0,0,.3); color: #fff; font-size: 18px; font-weight: 800; }
   .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -60,12 +73,15 @@
 <div id="flash"></div>
 <div id="pop"></div>
 <div id="powers"></div>
+<div id="focus"></div>
+<div id="meter"><div id="meterFill"></div><span id="meterLabel"></span></div>
 <button id="pauseBtn" class="hidden">II</button>
 
 <div id="menu" class="overlay">
   <div class="panel">
     <h1>Sphere Runner</h1>
     <p>Concept prototype. Swipe <b>left/right</b> to switch lane, <b>up</b> to jump, <b>down</b> to slide (or slam down in the air).</p>
+    <details style="margin:6px 0"><summary style="font-size:14px;font-weight:700;cursor:pointer">How to play</summary>
     <div class="legend">
       <div class="sw" style="background:#ff8c26"></div><div>Low block: jump</div>
       <div class="sw" style="background:#d940cc"></div><div>Floating bar: slide under</div>
@@ -78,6 +94,14 @@
       <div class="sw" style="background:#7df9ff"></div><div>Hop gate (every 2 laps): launch to a new planet</div>
     </div>
     <p style="font-size:13px">Keep coins and close calls coming for a <b>combo</b>. Hold your finger after a jump to <b>float</b>. Switch lanes in the air for a quick <b>air dash</b>.</p>
+    </details>
+    <div style="margin-top:10px;font-size:15px;font-weight:700">Character</div>
+    <div class="charpick" id="charPick">
+      <button data-v="runner" style="background:#3380ff">Runner</button>
+      <button data-v="smasher" style="background:#3a4658">Smasher</button>
+      <button data-v="jumper" style="background:#22b357">Jumper</button>
+    </div>
+    <p id="charDesc"></p>
     <div class="opt"><div>Shrinking globe<small>The world gets smaller every lap</small></div><input type="checkbox" id="optShrink"></div>
     <div class="opt"><div>Difficulty<small>Speed, obstacle density and mix</small></div><div class="seg" id="segDiff"><button data-v="easy">Easy</button><button data-v="medium">Medium</button><button data-v="hard">Hard</button></div></div>
     <div class="opt"><div>Sound</div><input type="checkbox" id="optSound"></div>
@@ -135,8 +159,25 @@ const SHRINK_FACTOR = 0.85, MIN_R = 12, SHRINK_TIME = 1.5;
 const HOP_TIME = 2.6, HOP_H = 14, HOP_EVERY_LAPS = 2;
 // Pacing: a wave of obstacles, then a calm stretch of coins.
 const WAVE_M = { easy: 220, medium: 260, hard: 300 }, CALM_M = 70;
-const COMBO_TIME = 2.5;           // seconds to keep the combo alive
-const FLOAT_TIME = 0.45, FLOAT_GRAVITY = 0.35;
+// Three play styles: same hitbox, different trait, ability and trade-off.
+const CHARS = {
+  runner: { name: 'Runner', desc: 'All-rounder. Quick lane switches, longer combo window. Ability: <b>Focus</b>, time slows down for 3 s.',
+    laneMul: 1.2, jumpV: 14, floatTime: 0.45, comboTime: 3.5, ability: 'focus', abilityTime: 3, label: 'FOCUS',
+    colors: { body: 0x3380ff, limb: 0x2559c4, accent: 0xf0f0f5, visor: 0x29d4ff },
+    shape: { torsoW: 1, shoulder: 1, armT: 1, hand: 1, legLen: 1, legT: 1, head: 1 } },
+  smasher: { name: 'Smasher', desc: 'Heavy. Armor absorbs one hit per wave (not glowing floors). Slower lane switches, lower jump. Ability: <b>Smash</b>, crash through blocks for 3 s.',
+    laneMul: 0.8, jumpV: 12.5, floatTime: 0.3, comboTime: 2.5, ability: 'smash', abilityTime: 3, label: 'SMASH', armor: true,
+    colors: { body: 0x3a4658, limb: 0x2a3342, accent: 0xffb020, visor: 0xffb020 },
+    shape: { torsoW: 1.3, shoulder: 1.25, armT: 1.45, hand: 1.7, legLen: 0.88, legT: 1.35, head: 0.95 } },
+  jumper: { name: 'Jumper', desc: 'Light. Jumps higher (about 3 m) and floats longer, but spends more time in the air. Ability: <b>Super jump</b>, a huge leap over anything.',
+    laneMul: 1.0, jumpV: 16.5, floatTime: 0.8, comboTime: 2.5, ability: 'super', abilityTime: 0, label: 'SUPER JUMP',
+    colors: { body: 0x22b357, limb: 0x15803d, accent: 0xeafff0, visor: 0xb6ff3d },
+    shape: { torsoW: 0.85, shoulder: 0.9, armT: 0.85, hand: 1, legLen: 1.18, legT: 0.85, head: 1 } },
+};
+const CH_DEF = () => CHARS[opts.char] || CHARS.runner;
+const METER_PER_COIN = 0.035, METER_PER_CLOSE = 0.11;
+const SUPER_JUMP_V = 27, SMASH_POINTS = 15;
+const FLOAT_GRAVITY = 0.35;
 const HIT_PAUSE = 0.25;
 
 // =====================================================================
@@ -148,9 +189,9 @@ const store = {
 };
 const opts = {
   shrink: store.get('shrink', false),
-  size: GLOBE_R, diff: store.get('diff', 'medium'), sound: store.get('sound', true), hitbox: store.get('hitbox', false),
+  size: GLOBE_R, diff: store.get('diff', 'medium'), sound: store.get('sound', true), hitbox: store.get('hitbox', false), char: store.get('char', 'runner'),
 };
-const modeKey = () => `${opts.diff}_${opts.shrink ? 'S' : ''}${opts.size}`;
+const modeKey = () => `${opts.char}_${opts.diff}_${opts.shrink ? 'S' : ''}${opts.size}`;
 
 // =====================================================================
 // Renderer, scene, camera
@@ -532,8 +573,7 @@ const CH = {
 };
 const charRoot = new THREE.Group();   // at the feet
 const pivot = new THREE.Group();      // at the hips: flips, tilts and leans rotate here
-const HIP_Y = 0.66;
-pivot.position.y = HIP_Y;
+let HIP_Y = 0.66;
 charRoot.add(pivot);
 scene.add(charRoot);
 function part(parent, w, h, d, m, x, y, z) {
@@ -545,31 +585,47 @@ function part(parent, w, h, d, m, x, y, z) {
 }
 function joint(parent, x, y, z) { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g; }
 const J = {};
-J.hips = joint(pivot, 0, 0, 0);
-part(J.hips, 0.42, 0.16, 0.26, CH.limb, 0, 0, 0);
-J.spine = joint(J.hips, 0, 0.06, 0);
-part(J.spine, 0.5, 0.44, 0.28, CH.body, 0, 0.24, 0);
-part(J.spine, 0.34, 0.3, 0.12, CH.head, 0, 0.26, 0.19);     // backpack (what the camera sees)
-J.head = joint(J.spine, 0, 0.48, 0);
-part(J.head, 0.32, 0.3, 0.3, CH.head, 0, 0.16, 0);
-part(J.head, 0.26, 0.08, 0.04, CH.visor, 0, 0.18, -0.16);   // visor on the front
-for (const s of [-1, 1]) {
-  const side = s < 0 ? 'L' : 'R';
-  const sh = J['arm' + side] = joint(J.spine, s * 0.32, 0.42, 0);
-  part(sh, 0.13, 0.3, 0.13, CH.body, 0, -0.14, 0);
-  const el = J['fore' + side] = joint(sh, 0, -0.29, 0);
-  part(el, 0.12, 0.24, 0.12, CH.limb, 0, -0.12, 0);
-  part(el, 0.13, 0.11, 0.13, CH.head, 0, -0.29, 0);          // hand
-  const hp = J['thigh' + side] = joint(J.hips, s * 0.12, -0.04, 0);
-  part(hp, 0.17, 0.32, 0.17, CH.limb, 0, -0.15, 0);
-  const kn = J['shin' + side] = joint(hp, 0, -0.3, 0);
-  part(kn, 0.15, 0.28, 0.15, CH.limb, 0, -0.14, 0);
-  part(kn, 0.17, 0.08, 0.28, CH.shoe, 0, -0.29, -0.05);      // shoe
+// Same skeleton for every type; only proportions and colours differ, so every move works for all.
+function buildCharacter(def) {
+  pivot.clear();
+  for (const k in J) delete J[k];
+  const sh = def.shape, L = sh.legLen, c = def.colors;
+  CH.accent = CH.accent || new THREE.MeshLambertMaterial({ color: 0xffffff });
+  tintCharacter(false, def);
+  HIP_Y = 0.07 + 0.59 * L;
+  pivot.position.y = HIP_Y;
+  J.hips = joint(pivot, 0, 0, 0);
+  part(J.hips, 0.42 * sh.torsoW, 0.16, 0.26, CH.limb, 0, 0, 0);
+  J.spine = joint(J.hips, 0, 0.06, 0);
+  part(J.spine, 0.5 * sh.torsoW, 0.44, 0.28 * Math.sqrt(sh.torsoW), CH.body, 0, 0.24, 0);
+  part(J.spine, 0.34 * sh.torsoW, 0.3, 0.12, CH.head, 0, 0.26, 0.19 * Math.sqrt(sh.torsoW));   // backpack
+  if (def.armor) for (const sx of [-1, 1]) part(J.spine, 0.26, 0.14, 0.34, CH.accent, sx * 0.36 * sh.shoulder, 0.47, 0);  // shoulder pads
+  J.head = joint(J.spine, 0, 0.48, 0);
+  part(J.head, 0.32 * sh.head, 0.3 * sh.head, 0.3 * sh.head, CH.head, 0, 0.16 * sh.head, 0);
+  part(J.head, 0.26 * sh.head, 0.08, 0.04, CH.visor, 0, 0.18 * sh.head, -0.16 * sh.head);
+  for (const sgn of [-1, 1]) {
+    const side = sgn < 0 ? 'L' : 'R';
+    const arm = J['arm' + side] = joint(J.spine, sgn * 0.32 * sh.shoulder, 0.42, 0);
+    part(arm, 0.13 * sh.armT, 0.3, 0.13 * sh.armT, CH.body, 0, -0.14, 0);
+    const el = J['fore' + side] = joint(arm, 0, -0.29, 0);
+    part(el, 0.12 * sh.armT, 0.24, 0.12 * sh.armT, CH.limb, 0, -0.12, 0);
+    part(el, 0.13 * sh.hand, 0.11 * sh.hand, 0.13 * sh.hand, def.armor ? CH.accent : CH.head, 0, -0.27 - 0.03 * sh.hand, 0);   // hand / fist
+    const hp = J['thigh' + side] = joint(J.hips, sgn * 0.12 * sh.torsoW, -0.04, 0);
+    part(hp, 0.17 * sh.legT, 0.32 * L, 0.17 * sh.legT, CH.limb, 0, -0.15 * L, 0);
+    const kn = J['shin' + side] = joint(hp, 0, -0.3 * L, 0);
+    part(kn, 0.15 * sh.legT, 0.28 * L, 0.15 * sh.legT, CH.limb, 0, -0.14 * L, 0);
+    part(kn, 0.17 * sh.legT, 0.08, 0.28, def.ability === 'super' ? CH.accent : CH.shoe, 0, -0.29 * L, -0.05);   // shoe
+  }
 }
-function tintCharacter(dead) {
-  CH.body.color.setHex(dead ? 0xff2626 : 0x3380ff);
-  CH.limb.color.setHex(dead ? 0xc41e1e : 0x2559c4);
+function tintCharacter(dead, def = CH_DEF()) {
+  const c = def.colors;
+  CH.body.color.setHex(dead ? 0xff2626 : c.body);
+  CH.limb.color.setHex(dead ? 0xc41e1e : c.limb);
+  CH.visor.color.setHex(c.visor); CH.visor.emissive.setHex(c.visor);
+  if (CH.accent) CH.accent.color.setHex(c.accent);
 }
+CH.accent = new THREE.MeshLambertMaterial({ color: 0xffffff });
+buildCharacter(CH_DEF());
 
 // Poses. Angles in radians. For arms and legs, +X swings forward; a shin bends back with -X,
 // a forearm bends forward with +X. Left arm/leg swing outward with -Z, right with +Z.
@@ -624,7 +680,7 @@ function characterTarget(t) {
     return p;
   }
   if (vy < -20) return POSES.slam();
-  if (holding && floatT > 0 && floatT < FLOAT_TIME && vy < 3) return POSES.float(t);
+  if (holding && floatT > 0 && floatT < CH_DEF().floatTime && vy < 3) return POSES.float(t);
   return POSES.air(vy);
 }
 
@@ -916,6 +972,7 @@ function updateSpawning() {
     const intensity = 1 - waveLeft / (WAVE_M[opts.diff] || 260);
     const gap = name === 'calm' ? 8 : Math.max(p.minGap, speed * p.gap * (1 - 0.2 * intensity));
     if (name !== 'calm') { waveLeft -= len + gap; if (waveLeft <= 0) calmLeft = 1; }
+    else if (CH_DEF().armor && state === 'run' && !armor) { armor = true; }
     // Power-ups float in the empty gap between patterns.
     powerIn -= len + gap;
     if (powerIn <= 0 && state === 'run') {
@@ -940,6 +997,7 @@ let lane = 0, px = 0, py = 0, vy = 0, slideT = 0, jumpBufferT = 0, grounded = tr
 let coins = 0, lap = 0, hitT = 0, shake = 0, squash = 0, pts = 0, closeCalls = 0;
 let flashT = 0, popT = 0;
 let combo = 0, comboT = 0, comboLevel = 1, floatT = 0, holding = false, dashT = 0;
+let meter = 0, abilityT = 0, armor = false, lastTap = 0;
 let waveLeft = 0, calmLeft = 0, nextPadLap = HOP_EVERY_LAPS, hopT = 0, hopSwapped = false, themeIdx = 0;
 const pw = { magnet: 0, shield: 0, orbit: 0, x2: 0, invuln: 0 };
 
@@ -949,6 +1007,7 @@ function reset() {
   themeIdx = 0; applyTheme(THEMES[0]);
   R = targetR = shrinkFrom = THEMES[0].R; shrinkT = 1;
   combo = 0; comboT = 0; comboLevel = 1; floatT = 0; dashT = 0;
+  meter = 0; abilityT = 0; armor = !!CH_DEF().armor; particles.forEach(p => scene.remove(p.m)); particles.length = 0;
   waveLeft = WAVE_M[opts.diff] || 260; calmLeft = 0; nextPadLap = HOP_EVERY_LAPS; hopT = 0;
   angle = 0; speed = P().start; dist = 0; spawnedChunks = 0; powerIn = 90;
   lane = 0; px = 0; py = 0; vy = 0; slideT = 0; jumpBufferT = 0; grounded = true; groundY = 0;
@@ -965,7 +1024,10 @@ function reset() {
 const mult = () => (pw.x2 > 0 ? 2 : 1);
 const comboMult = () => 1 + Math.min(4, Math.floor(combo / 10));
 function addCombo(n) {
-  combo += n; comboT = COMBO_TIME;
+  const was = meter;
+  meter = Math.min(1, meter + (n >= 3 ? METER_PER_CLOSE : METER_PER_COIN * n));
+  if (was < 1 && meter >= 1) { pop(CH_DEF().label + ' READY'); sfx.ready(); }
+  combo += n; comboT = CH_DEF().comboTime;
   const lv = comboMult();
   if (lv > comboLevel) { comboLevel = lv; pop('COMBO x' + lv); sfx.combo(); }
 }
@@ -978,6 +1040,12 @@ function crash(it) {
     pw.shield = 0; pw.invuln = 1.0;
     if (it) hideItem(it);
     shake = 0.35; flash('SHIELD!'); sfx.shield();
+    return;
+  }
+  if (armor && it && it.kind !== 'PIT' && it.kind !== 'PLATFORM') {
+    armor = false; pw.invuln = 0.6;
+    smashItem(it, false);
+    flash('ARMOR!');
     return;
   }
   state = 'hit';
@@ -1081,7 +1149,7 @@ function surfaceUnderPlayer() {
 }
 
 function movePlayer(dt) {
-  px = moveToward(px, lane * LANE_W, LANE_SPEED * (dashT > 0 ? 2 : 1) * dt);
+  px = moveToward(px, lane * LANE_W, LANE_SPEED * CH_DEF().laneMul * (dashT > 0 ? 2 : 1) * dt);
   if (hopT > 0) return;
   if (pw.orbit > 0) {
     // Float high above the globe.
@@ -1095,7 +1163,7 @@ function movePlayer(dt) {
     grounded = false;
     // Holding the finger down after a jump floats a little near the top.
     let g = GRAVITY;
-    if (holding && vy < 3 && floatT < FLOAT_TIME && slideT <= 0) { g *= FLOAT_GRAVITY; floatT += dt; }
+    if (holding && vy < 3 && floatT < CH_DEF().floatTime && slideT <= 0) { g *= FLOAT_GRAVITY; floatT += dt; }
     vy -= g * dt;
     py += vy * dt;
     if (py <= groundY) {
@@ -1158,12 +1226,59 @@ function collide(dt) {
     } else if (it.kind === 'POWER') {
       hideItem(it); activate(it.power);
     } else if (pw.orbit <= 0) {
+      if (abilityT > 0 && CH_DEF().ability === 'smash' && SMASHABLE.has(it.kind)) { smashItem(it); continue; }
       crash(it); if (state !== 'run') return;
     }
   }
 }
 
 let skyCoinIn = 0, skyWave = 0;
+
+// ---------- Character abilities (double-tap when the meter is full)
+function useAbility() {
+  if (state !== 'run' || meter < 1 || hopT > 0 || pw.orbit > 0 || abilityT > 0) return;
+  const d = CH_DEF();
+  meter = 0;
+  sfx.ability();
+  flash(d.label + '!');
+  if (d.ability === 'super') {
+    slideT = 0; vy = SUPER_JUMP_V; grounded = false; floatT = 0; squash = -1; jumpBufferT = 0;
+    abilityT = 1.6;                    // just for the visual trail
+  } else abilityT = d.abilityTime;
+}
+const SMASHABLE = new Set(['LOW', 'HIGH', 'WALL', 'MOVER']);
+function smashItem(it, score = true) {
+  hideItem(it);
+  burst(it, KIND[it.kind].color);
+  shake = Math.max(shake, 0.25);
+  sfx.smash();
+  if (score) { const b = SMASH_POINTS * mult() * comboMult(); pts += b; addCombo(2); pop('SMASH +' + b); }
+}
+// Debris: small cubes thrown up and back, in world space.
+const particles = [];
+const _wp = new THREE.Vector3();
+function burst(it, color) {
+  it.parts[0].obj.getWorldPosition(_wp);
+  for (let i = 0; i < 10; i++) {
+    const m = new THREE.Mesh(boxGeo, flat(color));
+    const s = 0.15 + Math.random() * 0.25;
+    m.scale.setScalar(s);
+    m.position.copy(_wp).add(new THREE.Vector3((Math.random() - 0.5) * 1.2, Math.random() * 0.8, (Math.random() - 0.5) * 0.6));
+    scene.add(m);
+    particles.push({ m, v: new THREE.Vector3((Math.random() - 0.5) * 8, 4 + Math.random() * 7, -2 + Math.random() * 4), life: 0.9 });
+  }
+}
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt;
+    p.v.y -= 30 * dt;
+    p.m.position.addScaledVector(p.v, dt);
+    p.m.position.z += speed * dt * (state === 'run' ? 1 : 0);   // left behind as the world moves
+    p.m.rotation.x += dt * 8; p.m.rotation.y += dt * 6;
+    if (p.life <= 0) { scene.remove(p.m); particles.splice(i, 1); }
+  }
+}
 function startHop() {
   hopT = HOP_TIME; hopSwapped = false; hopBase = py;
   pw.orbit = 0; slideT = 0; vy = 0;
@@ -1201,7 +1316,7 @@ function activate(kind) {
 }
 
 function jump() {
-  slideT = 0; vy = JUMP_V; jumpBufferT = 0; grounded = false; squash = -1; floatT = 0; sfx.jump();
+  slideT = 0; vy = CH_DEF().jumpV; jumpBufferT = 0; grounded = false; squash = -1; floatT = 0; sfx.jump();
 }
 
 function action(dir) {
@@ -1247,6 +1362,9 @@ function render(dt) {
   updateCharacter(dt);
   charRoot.scale.set(1 / Math.sqrt(sq), sq, 1 / Math.sqrt(sq));
   charRoot.position.set(px, R + py, 0);
+  const glowing = state === 'run' && abilityT > 0;
+  CH.body.emissive.setHex(glowing ? (CH_DEF().ability === 'smash' ? 0xff6a00 : CH_DEF().ability === 'super' ? 0x55ff55 : 0x3377ff) : 0x000000);
+  CH.body.emissiveIntensity = glowing ? 0.5 + 0.3 * Math.sin(performance.now() / 60) : 0;
   // Blink while invulnerable after a shield hit or orbit.
   charRoot.visible = !(pw.invuln > 0 && pw.invuln < 1.4 && Math.floor(performance.now() / 80) % 2 === 0);
 
@@ -1289,8 +1407,15 @@ function updateHud() {
   const list = [];
   for (const k of ['magnet', 'orbit', 'x2']) if (pw[k] > 0) list.push(`<span style="color:#${POWERS[k].color.toString(16).padStart(6, '0')}">${POWERS[k].label} ${Math.ceil(pw[k])}</span>`);
   if (pw.shield > 0) list.push(`<span style="color:#3dff6e">SHIELD</span>`);
+  if (armor) list.push(`<span style="color:#ffb020">ARMOR</span>`);
   $('powers').innerHTML = list.join('<br>');
-  $('combo').innerHTML = combo >= 3 ? `COMBO x${comboMult()} <span style="opacity:.7;font-size:13px">${combo}</span><div class="bar" style="width:${Math.round(110 * comboT / COMBO_TIME)}px"></div>` : '';
+  const d = CH_DEF();
+  $('meterFill').style.width = (abilityT > 0 && d.abilityTime ? abilityT / d.abilityTime : meter) * 100 + '%';
+  $('meterFill').style.background = d.colors.visor;
+  $('meterLabel').textContent = abilityT > 0 && d.abilityTime ? d.label : meter >= 1 ? 'DOUBLE-TAP: ' + d.label : d.label;
+  $('meter').classList.toggle('ready', meter >= 1 && abilityT <= 0);
+  $('meter').style.display = state === 'run' ? 'block' : 'none';
+  $('combo').innerHTML = combo >= 3 ? `COMBO x${comboMult()} <span style="opacity:.7;font-size:13px">${combo}</span><div class="bar" style="width:${Math.round(110 * comboT / CH_DEF().comboTime)}px"></div>` : '';
 }
 
 let last = performance.now();
@@ -1298,7 +1423,15 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   fps += (1 / Math.max(dt, 0.001) - fps) * 0.05;
-  step(dt);
+  // Focus slows the whole game down while it lasts.
+  let gdt = dt;
+  if (state === 'run' && abilityT > 0) {
+    abilityT = Math.max(0, abilityT - dt);
+    if (CH_DEF().ability === 'focus') gdt = dt * 0.45;
+  }
+  $('focus').style.opacity = state === 'run' && abilityT > 0 && CH_DEF().ability === 'focus' ? 1 : 0;
+  step(gdt);
+  updateParticles(gdt);
   render(dt);
   requestAnimationFrame(frame);
 }
@@ -1309,7 +1442,7 @@ function frame(now) {
 const SWIPE_MIN = 28;
 let down = null;
 const cvs = renderer.domElement;
-cvs.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, used: false }; holding = true; });
+cvs.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, used: false, t: performance.now() }; holding = true; });
 cvs.addEventListener('pointermove', e => {
   if (!down || down.used) return;
   const dx = e.clientX - down.x, dy = e.clientY - down.y;
@@ -1318,7 +1451,14 @@ cvs.addEventListener('pointermove', e => {
   if (Math.abs(dx) > Math.abs(dy)) action(dx > 0 ? 'right' : 'left');
   else action(dy > 0 ? 'down' : 'up');
 });
-const endPointer = () => { down = null; holding = false; };
+const endPointer = () => {
+  // A tap (no swipe, short press); two taps within 0.45 s trigger the character ability.
+  if (down && !down.used && performance.now() - down.t < 300) {
+    const now = performance.now();
+    if (now - lastTap < 450) { useAbility(); lastTap = 0; } else lastTap = now;
+  }
+  down = null; holding = false;
+};
 cvs.addEventListener('pointerup', endPointer);
 cvs.addEventListener('pointercancel', endPointer);
 document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
@@ -1330,6 +1470,7 @@ window.addEventListener('keydown', e => {
   if (map[e.code]) { e.preventDefault(); if (e.repeat) return; if (map[e.code] === 'up') holding = true; action(map[e.code]); }
   if ((e.code === 'Enter' || e.code === 'Space') && state === 'over') startRun();
   if (e.code === 'Escape' || e.code === 'KeyP') togglePause();
+  if (e.code === 'KeyE' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') useAbility();
 });
 
 // =====================================================================
@@ -1357,6 +1498,9 @@ const sfx = {
   close: () => beep(1200, 1800, 0.07, 'triangle', 0.06),
   power: () => { beep(440, 880, 0.12); setTimeout(() => beep(660, 1320, 0.15), 90); },
   shield: () => beep(900, 200, 0.25, 'triangle', 0.1),
+  ready: () => { beep(523, 523, 0.08); setTimeout(() => beep(659, 659, 0.08), 80); setTimeout(() => beep(784, 784, 0.14), 160); },
+  ability: () => { beep(150, 900, 0.35, 'sawtooth', 0.08); },
+  smash: () => { beep(160, 50, 0.18, 'square', 0.12); },
   combo: () => { beep(660, 660, 0.06); setTimeout(() => beep(990, 990, 0.1), 60); },
   dash: () => beep(700, 1400, 0.08, 'sawtooth', 0.04),
   hop: () => { beep(200, 1200, 0.6, 'triangle', 0.1); setTimeout(() => beep(400, 1600, 0.5, 'sine', 0.08), 200); },
@@ -1397,6 +1541,19 @@ bindCheck('optShrink', 'shrink');
 bindCheck('optSound', 'sound');
 bindCheck('optHitbox', 'hitbox');
 bindSeg('segDiff', 'diff');
+{
+  const pickEl = $('charPick');
+  const paint = () => {
+    pickEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === opts.char));
+    $('charDesc').innerHTML = CH_DEF().desc + ' Double-tap when the meter is full.';
+  };
+  pickEl.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    opts.char = b.dataset.v; store.set('char', opts.char);
+    buildCharacter(CH_DEF()); paint(); refreshMenu();
+  });
+  paint();
+}
 
 function startRun() {
   initAudio();
@@ -1426,7 +1583,7 @@ reset();
 idle();
 requestAnimationFrame(frame);
 window.__game = { get state() { return state; }, get score() { return score(); }, action, startRun,
-  get items() { return items.length; }, get py() { return py; }, get pw() { return pw; }, get kinds() { return items.map(i => i.kind); }, get near() { return items.filter(i => i.alive).map(i => ({ k: i.kind, x: i.x, d: aheadM(i), hd: i.hd })); }, get grounded() { return grounded; }, set hold(v) { holding = v; }, get pose() { return { ...curPose }; }, get combo() { return combo; }, get theme() { return theme.name; }, get hopT() { return hopT; }, startHop, activate, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
+  get items() { return items.length; }, get py() { return py; }, get pw() { return pw; }, get kinds() { return items.map(i => i.kind); }, get near() { return items.filter(i => i.alive).map(i => ({ k: i.kind, x: i.x, d: aheadM(i), hd: i.hd })); }, get grounded() { return grounded; }, useAbility, set meter(v) { meter = v; }, get abilityT() { return abilityT; }, get armor() { return armor; }, set hold(v) { holding = v; }, get pose() { return { ...curPose }; }, get combo() { return combo; }, get theme() { return theme.name; }, get hopT() { return hopT; }, startHop, activate, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
 </script>
 <script>
 window.addEventListener('error', e => { const el = document.getElementById('err'); el.style.display = 'block'; el.textContent = 'Error: ' + e.message; });
