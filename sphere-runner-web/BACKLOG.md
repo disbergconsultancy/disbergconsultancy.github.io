@@ -4,6 +4,8 @@ Status of ideas. Built items are listed briefly for context; the rest has design
 The Godot project (`sphere-runner/`) is the main version; the web prototype stays as a quick test bed.
 
 ## Built
+- Look polish: soft (bevelled) blocks, hero details (blinking eyes, belt, soles; Runner headband, Smasher horns,
+  Jumper antennae), KayKit scenery, roadside cones and flags, model obstacles and power-ups, textured boss blocks.
 - Core run, obstacle patterns, waves, power-ups, three characters with abilities, sound.
 - Four planets, planet hop, boss chase (boss on the horizon throws onto red markers; pass under it to win), boss test.
 - Progression: XP and levels 1-20 per character (13 skill points), skill trees v2 (boss and XP nodes,

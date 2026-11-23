@@ -23,6 +23,8 @@ Everything is built in code (no editor scenes besides `scenes/main.tscn`), so it
 | `scripts/character.gd` | Block figure on a humanoid joint layout, toon animation: poses on springs (overshoot, follow-through), squash and stretch, one-off moves (takeoff, air-jump flip, lane hop, slide dust, landing dust, stumble, crash flop, cheer), menu idle |
 | `scripts/hero.gd` | Hero models (KayKit, CC0): Runner = Ranger, Smasher = Barbarian, Jumper = Rogue. Animation clips (run, jump, land, lane dodge, slide, death, upper-body cheer and flinch) in an AnimationTree, with the block figure's toon layer on top. Menu setting "Hero models" switches between heroes and block figures |
 | `assets/kaykit/` | KayKit Adventurers characters and Character Animations (Rig_Medium), by Kay Lousberg (www.kaylousberg.com), CC0 |
+| `scripts/kit.gd` | Shared look: soft (bevelled) blocks used for every block in the game, and loading, fitting and tinting KayKit models |
+| `assets/kit/` | KayKit Forest Nature, Platformer and Block Bits pieces (CC0, Kay Lousberg): scenery, cones and flags, jump barriers, red wall blocks, ramps and platforms, power-up models, textured boss blocks |
 | `assets/bosses/` | Boss models (Tripo, supplied by the project owner; see its README for the licence note), simplified for mobile: Minotaur, Sand Wyvern, Ice Titan (ice golem), Magma Giant (lava monster). Animated in code in `boss.gd` |
 | `scripts/swipe_input.gd` | Swipes (vertical-friendly zones), taps, double-taps, hold |
 | `scripts/hud.gd` | HUD, ability meter, power-up list, boss bar, menu (character, difficulty, sound, boss test, stats), skill tree, core shop, crash screen |

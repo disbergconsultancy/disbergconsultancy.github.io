@@ -39,6 +39,12 @@ var lane_dir := 0.0
 var stumble_t := 0.0
 var cheer_t := 0.0
 var crash_t := -1.0
+var eyes: Array[Node3D] = []   # blink now and then
+var blink_t := 2.0
+var gear_angle := 0.0          # headband tails / antennae: a floppy spring
+var gear_vel := 0.0
+var eye_mat := StandardMaterial3D.new()
+var dark_mat := StandardMaterial3D.new()
 var dust_slide: CPUParticles3D
 var dust_land: CPUParticles3D
 
@@ -47,6 +53,8 @@ func _ready() -> void:
 	for k in KEYS:
 		pose[k] = 0.0
 	head_mat.albedo_color = Color("f0f0f5")
+	eye_mat.albedo_color = Color("1a1f2e")
+	dark_mat.albedo_color = Color("2a2f3a")
 	visor_mat.emission_enabled = true
 	visor_mat.emission_energy_multiplier = 0.4
 	body_mat.emission_enabled = true
@@ -178,6 +186,34 @@ func build(d: Dictionary) -> void:
 	j["head"] = _joint(j["spine"], Vector3(0, 0.48, 0))
 	_part(j["head"], Vector3(0.32, 0.3, 0.3) * hs, head_mat, Vector3(0, 0.16 * hs, 0))
 	_part(j["head"], Vector3(0.26 * hs, 0.08, 0.04), visor_mat, Vector3(0, 0.18 * hs, -0.16 * hs))   # visor on the front
+	eyes.clear()
+	for sx in [-1.0, 1.0]:      # eyes on the visor; they blink
+		var e := _joint(j["head"], Vector3(sx * 0.06 * hs, 0.18 * hs, -0.185 * hs))
+		_part(e, Vector3(0.045, 0.06, 0.02) * hs, eye_mat, Vector3.ZERO)
+		eyes.append(e)
+	_part(j["hips"], Vector3(0.44 * tw, 0.06, 0.28), accent_mat, Vector3(0, 0.07, 0))     # belt
+	_part(j["hips"], Vector3(0.08, 0.06, 0.03), visor_mat, Vector3(0, 0.07, -0.145))      # buckle
+	match d.get("gear", ""):
+		"headband":       # Runner: a red headband whose tails flutter behind
+			var band := StandardMaterial3D.new()
+			band.albedo_color = Color("ff3b3b")
+			_part(j["head"], Vector3(0.335, 0.06, 0.315) * hs, band, Vector3(0, 0.27 * hs, 0))
+			j["gear"] = _joint(j["head"], Vector3(0, 0.27 * hs, 0.16 * hs))
+			_part(j["gear"], Vector3(0.05, 0.035, 0.26), band, Vector3(-0.04, 0.0, 0.13))
+			_part(j["gear"], Vector3(0.05, 0.035, 0.2), band, Vector3(0.05, -0.03, 0.1))
+		"horns":          # Smasher: horns on the helmet
+			for sx in [-1.0, 1.0]:
+				var hn := _joint(j["head"], Vector3(sx * 0.15 * hs, 0.26 * hs, 0))
+				hn.rotation.z = -sx * 0.5
+				_part(hn, Vector3(0.08, 0.14, 0.08), accent_mat, Vector3(0, 0.07, 0))
+				_part(hn, Vector3(0.05, 0.08, 0.05), head_mat, Vector3(0, 0.17, 0))
+		"antenna":        # Jumper: two antennae with glowing tips that wobble
+			j["gear"] = _joint(j["head"], Vector3(0, 0.3 * hs, 0))
+			for sx in [-1.0, 1.0]:
+				var an := _joint(j["gear"], Vector3(sx * 0.08 * hs, 0, 0))
+				an.rotation.z = -sx * 0.25
+				_part(an, Vector3(0.03, 0.2, 0.03), limb_mat, Vector3(0, 0.1, 0))
+				_part(an, Vector3(0.07, 0.07, 0.07), visor_mat, Vector3(0, 0.22, 0))
 	for s in [-1, 1]:
 		var side := "l" if s < 0 else "r"
 		var at: float = sh["arm_t"]
@@ -197,6 +233,7 @@ func build(d: Dictionary) -> void:
 		j["shin_" + side] = shin
 		_part(shin, Vector3(0.15 * lt, 0.28 * leg, 0.15 * lt), limb_mat, Vector3(0, -0.14 * leg, 0))
 		_part(shin, Vector3(0.17 * lt, 0.08, 0.28), accent_mat if d["ability"] == "super" else head_mat, Vector3(0, -0.29 * leg, -0.05))   # shoe
+		_part(shin, Vector3(0.175 * lt, 0.03, 0.29), dark_mat, Vector3(0, -0.34 * leg, -0.05))   # sole
 
 
 func _joint(parent: Node3D, pos: Vector3) -> Node3D:
@@ -208,9 +245,7 @@ func _joint(parent: Node3D, pos: Vector3) -> Node3D:
 
 func _part(parent: Node3D, size: Vector3, m: Material, pos: Vector3) -> void:
 	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
-	mi.mesh = bm
+	mi.mesh = Kit.soft_box(size)
 	mi.material_override = m
 	mi.position = pos
 	parent.add_child(mi)
@@ -368,6 +403,29 @@ func update_pose(dt: float, state: String, s: Dictionary) -> void:
 	j["thigh_r"].rotation = Vector3(pose["thigh_rx"], 0, pose["thigh_rz"])
 	j["shin_l"].rotation.x = pose["shin_l"]
 	j["shin_r"].rotation.x = pose["shin_r"]
+	_details(dt, state, s)
+
+
+## Blinking eyes, and the floppy headband tails / antennae (they lag and bounce).
+func _details(dt: float, state: String, s: Dictionary) -> void:
+	blink_t -= dt
+	if blink_t < -0.12:
+		blink_t = randf_range(1.8, 4.0)
+	var closed := blink_t < 0.0 or state == "hit" or state == "over"
+	for e in eyes:
+		e.scale.y = 0.15 if closed else 1.0
+	if not j.has("gear"):
+		return
+	var t := Time.get_ticks_msec() / 1000.0
+	var target := 0.0
+	var speed_k := clampf(s["speed"] / 20.0, 0.0, 1.0) if state == "run" else 0.0
+	if def.get("gear", "") == "headband":   # hang down when still, stream behind when running
+		target = lerpf(1.1, 0.15, speed_k) + clampf(s["vy"] * 0.04, -0.5, 0.5) + 0.14 * speed_k * sin(t * 19.0)
+	else:                                   # antennae: bend against the movement
+		target = clampf(s["vy"] * 0.035, -0.5, 0.5) + 0.12 * speed_k * sin(run_phase * 2.0)
+	gear_vel += ((target - gear_angle) * 160.0 - gear_vel * 2.0 * 0.25 * sqrt(160.0)) * dt
+	gear_angle += gear_vel * dt
+	j["gear"].rotation.x = gear_angle
 
 
 # --- Shared toon layer (also used by HeroCharacter) ---------------------------------

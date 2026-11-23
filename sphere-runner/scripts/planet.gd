@@ -34,6 +34,34 @@ const PROPS := {
 	"lava": [["cyl6", "ff6a1f", Vector3(0, 0.02, 0), Vector3(0.9, 0.05, 0.9), Vector3.ZERO, 1.5]],
 	"ash_rock": [["octa", "4a3a3a", Vector3(0, 0.25, 0), Vector3(0.7, 0.55, 0.6)]],
 }
+## Scenery models from the KayKit Forest pack: [model, height in m, tint (multiplied), flat colour?].
+const MODEL_PROPS := {
+	"f_tree1": ["forest/Tree_1_A_Color1", 2.4, Color.WHITE, false],
+	"f_tree1b": ["forest/Tree_1_B_Color1", 2.8, Color.WHITE, false],
+	"f_tree2": ["forest/Tree_2_A_Color1", 2.6, Color.WHITE, false],
+	"f_tree2e": ["forest/Tree_2_E_Color1", 3.2, Color.WHITE, false],
+	"f_tree3": ["forest/Tree_3_A_Color1", 2.2, Color.WHITE, false],
+	"f_pine": ["forest/Tree_4_A_Color1", 2.8, Color.WHITE, false],
+	"f_bush": ["forest/Bush_1_D_Color1", 0.8, Color.WHITE, false],
+	"f_bush3": ["forest/Bush_3_A_Color1", 0.5, Color.WHITE, false],
+	"f_rock": ["forest/Rock_1_E_Color1", 0.9, Color.WHITE, false],
+	"f_rock2": ["forest/Rock_3_A_Color1", 0.7, Color.WHITE, false],
+	"f_grass": ["forest/Grass_1_C_Color1", 0.45, Color.WHITE, false],
+	"f_acacia": ["forest/Tree_3_C_Color1", 2.4, Color("c8d27a"), false],
+	"f_sandrock": ["forest/Rock_2_E_Color1", 1.6, Color("e0a868"), false],
+	"f_sandrock2": ["forest/Rock_1_J_Color1", 1.3, Color("d9a060"), false],
+	"f_drygrass": ["forest/Grass_1_C_Color1", 0.45, Color("d8c070"), false],
+	"f_frostpine": ["forest/Tree_4_A_Color1", 2.8, Color("bfe4ff"), false],
+	"f_icerock": ["forest/Rock_3_K_Color1", 1.0, Color("bfe0ff"), true],
+	"f_snowrock": ["forest/Rock_1_E_Color1", 0.9, Color("eef6ff"), true],
+	"f_bare": ["forest/Tree_Bare_1_A_Color1", 1.8, Color("2a1e1e"), true],
+	"f_bare2": ["forest/Tree_Bare_2_A_Color1", 2.4, Color("33241f"), true],
+	"f_ashrock": ["forest/Rock_1_A_Color1", 0.8, Color("4a3a3a"), true],
+	"f_ashrock2": ["forest/Rock_3_E_Color1", 0.9, Color("3a2e2e"), true],
+}
+## Power-up models (Platformer pack).
+const POWER_MODELS := {"magnet": "platformer/power_blue", "shield": "platformer/heart_green",
+	"orbit": "platformer/star_yellow", "x2": "platformer/diamond_red"}
 const TERRAIN_AMP := 4.3
 const WATER_H := -1.1
 
@@ -63,7 +91,48 @@ func build(th: Dictionary) -> void:
 			d.material_override = mat(th["dash"], road_glow * 0.75)
 			_world.add_child(d)
 			place(d, TAU * i / n, side * Config.LANE_W, 0.02)
+	_build_roadside()
 	_build_props()
+
+
+## Cones along the curbs and a few flags in the planet's colour (Platformer pack).
+func _build_roadside() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11 + int(radius)
+	var flag: String = theme.get("flag", "red")
+	var sets := {"platformer/cone_red": [], "platformer/cone_yellow": [], "platformer/flag_A_" + flag: []}
+	var n := int(TAU * radius / 9.0)
+	for i in n:
+		var phi := TAU * (i + rng.randf() * 0.6) / n
+		var side := -1.0 if rng.randf() < 0.5 else 1.0
+		var kind := "platformer/flag_A_" + flag if i % 7 == 3 else ("platformer/cone_red" if rng.randf() < 0.5 else "platformer/cone_yellow")
+		var hgt := 1.9 if kind.contains("flag") else 0.55
+		var x := side * (Config.TRACK_HALF + (0.75 if kind.contains("flag") else 0.55))
+		var b := Basis(Vector3.RIGHT, -phi)
+		sets[kind].append([Transform3D(b, b * Vector3(x, radius + 0.1, 0.0)), hgt, rng.randf() * TAU])
+	for kind in sets:
+		_multimesh(kind, sets[kind], Color.WHITE, false)
+
+
+## One MultiMesh for many copies of a model. items: [base transform, height, spin].
+func _multimesh(name: String, items: Array, tint: Color, flat: bool) -> void:
+	if items.is_empty():
+		return
+	var info := Kit.model(name)
+	var aabb: AABB = info["aabb"]
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = info["mesh"]
+	mm.instance_count = items.size()
+	for i in items.size():
+		var k: float = items[i][1] / aabb.size.y
+		var local := Transform3D(Basis(Vector3.UP, items[i][2]).scaled(Vector3.ONE * k),
+			Basis(Vector3.UP, items[i][2]) * Vector3(-aabb.get_center().x, -aabb.position.y, -aabb.get_center().z) * k)
+		mm.set_instance_transform(i, items[i][0] * local * info["xf"])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = Kit.material(name, tint, flat)
+	_world.add_child(mmi)
 
 
 ## Terrain height in metres at a direction on the globe: hills and lakes, always
@@ -189,6 +258,7 @@ func _build_props() -> void:
 	for w in kit.values():
 		total += w
 	var per_part := {}   # "prop/index" -> Array[Transform3D]
+	var model_sets := {} # model prop -> [[transform, height, spin]]
 	var placed := 0
 	var guard := 0
 	while placed < 340 and guard < 6000:
@@ -211,6 +281,12 @@ func _build_props() -> void:
 				break
 		var b := Basis(Quaternion(Vector3.UP, v)) * Basis(Vector3.UP, rng.randf() * TAU)
 		var base := Transform3D(b.scaled_local(Vector3.ONE * s), v * (radius - 0.3 + terrain_h(v) - 0.05))
+		if MODEL_PROPS.has(name):
+			if not model_sets.has(name):
+				model_sets[name] = []
+			model_sets[name].append([Transform3D(b, base.origin), MODEL_PROPS[name][1] * s, 0.0])
+			placed += 1
+			continue
 		var parts: Array = PROPS[name]
 		for i in parts.size():
 			var part: Array = parts[i]
@@ -234,6 +310,9 @@ func _build_props() -> void:
 		mmi.multimesh = mm
 		mmi.material_override = mat(Color(part[1]), part[5] if part.size() > 5 else 0.0)
 		_world.add_child(mmi)
+	for name in model_sets:
+		var mp: Array = MODEL_PROPS[name]
+		_multimesh(mp[0], model_sets[name], mp[2], mp[3])
 
 
 func mat(color: Color, glow := 0.0) -> StandardMaterial3D:
@@ -258,9 +337,7 @@ func place(node: Node3D, phi: float, x: float, y_center: float) -> void:
 
 func _box(size: Vector3, color: Color, glow := 0.0) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
-	mi.mesh = bm
+	mi.mesh = Kit.soft_box(size)
 	mi.material_override = mat(color, glow)
 	return mi
 
@@ -287,14 +364,15 @@ func add_item(kind: String, phi: float, x: float, opts := {}) -> Item:
 			var n := maxi(1, ceili(depth / 2.5))
 			var seg := depth / n
 			for i in n:
-				var c := Color("5a6b8c") if i % 2 else Color("52617f")
-				it.parts.append({"node": _box(Vector3(w, h, seg + 0.02), c), "dm": -depth / 2.0 + seg * (i + 0.5), "y": it.y0 + h / 2.0})
+				it.parts.append({"node": Kit.node("platformer/platform_2x2x1_blue", Vector3(w, h, seg + 0.02), Color(0.62, 0.7, 0.88) if i % 2 else Color(0.56, 0.64, 0.82)), "dm": -depth / 2.0 + seg * (i + 0.5), "y": it.y0 + h / 2.0})
 		"RAMP":
-			var g := Node3D.new()
-			var plank := _box(Vector3(w, 0.15, Vector2(depth, h).length()), color)
-			plank.rotation.x = atan2(h, depth)   # rises away from the player
-			g.add_child(plank)
+			var g := Kit.node("platformer/platform_slope_2x4x4_blue", Vector3(w, h, depth), Color(0.62, 0.7, 0.88))   # rises away from the player
 			it.parts.append({"node": g, "dm": 0.0, "y": h / 2.0})
+		"LOW":       # padded crate: jump over it
+			it.parts.append({"node": Kit.node("platformer/barrier_1x1x1_yellow", Vector3(w, h, depth), Color(1.0, 0.68, 0.42)), "dm": 0.0, "y": it.y0 + h / 2.0})
+		"WALL":      # two stacked red blocks: switch lane
+			for i in 2:
+				it.parts.append({"node": Kit.node("blockbits/decorative_block_red", Vector3(w, h / 2.0, depth)), "dm": 0.0, "y": it.y0 + h * (0.25 + 0.5 * i)})
 		"PIT":
 			it.parts.append({"node": _box(Vector3(w, h, depth), color, 1.2), "dm": 0.0, "y": 0.03})
 		"COIN":
@@ -337,8 +415,7 @@ func add_item(kind: String, phi: float, x: float, opts := {}) -> Item:
 			it.parts.append({"node": _box(Vector3(w, h, depth), theme["boss"]["wave"], 1.0), "dm": 0.0, "y": it.y0 + h / 2.0})
 		"POWER":
 			it.power = opts.get("power", "magnet")
-			var pc: Color = Config.POWERS[it.power]["color"]
-			it.parts.append({"node": _box(Vector3(w, h, depth), pc, 0.9), "dm": 0.0, "y": it.y0 + h / 2.0, "spin": true})
+			it.parts.append({"node": Kit.node(POWER_MODELS[it.power], Vector3(w, h, depth) * 1.25, Color.WHITE, false, true), "dm": 0.0, "y": it.y0 + h / 2.0, "spin": true})
 		_:
 			it.parts.append({"node": _box(Vector3(w, h, depth), color), "dm": 0.0, "y": it.y0 + h / 2.0})
 			_add_details(it, kind, w, h, depth)
@@ -355,19 +432,10 @@ func _add_details(it: Item, kind: String, w: float, h: float, depth: float) -> v
 	var band := func(yy: float, color: Color, bh: float) -> void:
 		it.parts.append({"node": _box(Vector3(w + 0.05, bh, depth + 0.05), color), "dm": 0.0, "y": yy})
 	match kind:
-		"LOW":       # crate: bands and a cross plank
-			band.call(y0 + 0.07, Color("b8561a"), 0.14)
-			band.call(y0 + h - 0.07, Color("b8561a"), 0.14)
-			it.parts.append({"node": _box(Vector3(w * 0.18, h - 0.2, depth + 0.06), Color("b8561a")), "dm": 0.0, "y": y0 + h / 2.0})
 		"HIGH":      # a bar on two posts: clearly "go under"
 			for sx in [-1.0, 1.0]:
 				it.parts.append({"node": _box(Vector3(0.14, y0, 0.14), Color("8a3a8a")), "dm": 0.0, "y": y0 / 2.0, "dx": sx * (w / 2.0 - 0.07)})
 			band.call(y0 + 0.08, Color.WHITE, 0.08)
-		"WALL":      # stacked layers
-			var yy := 0.7
-			while yy < h:
-				band.call(yy, Color("a82020"), 0.09)
-				yy += 0.7
 		"MOVER", "SWEEPLOW":
 			band.call(y0 + h * 0.5, Color.WHITE, 0.14 if kind == "MOVER" else 0.08)
 		"SWEEPHIGH":   # a thrown bar that lands on two posts: slide under

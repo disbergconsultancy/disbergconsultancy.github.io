@@ -59,14 +59,21 @@ func _build() -> void:
 	_body = Node3D.new()      # pivot at the ground: leans and hops happen here
 	add_child(_body)
 	_model = null
+	_overlay.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_overlay.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_overlay.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_overlay.albedo_color = Color(0, 0, 0, 0)
 	if Config.hero_models and b.has("model"):
 		_build_model(b)
 		return
-	var body_mat := _mat(b["body"], b["glow"] * 0.3)
 	var s := Config.BOSS_SIZE
-	_box(Vector3(s, s, s), body_mat, Vector3(0, Config.BOSS_LIFT + s / 2.0, 0))
+	# A giant textured block (KayKit Block Bits: stone, sand, snow, lava) on two block legs.
+	var tex: String = "blockbits/" + b.get("block", "stone")
+	_block(tex, Vector3(s, s, s), Vector3(0, Config.BOSS_LIFT + s / 2.0, 0))
 	for sx in [-1.0, 1.0]:      # legs beside the track
-		_box(Vector3(2.4, Config.BOSS_LIFT + 0.5, 3.2), body_mat, Vector3(sx * (Config.TRACK_HALF + 1.7), (Config.BOSS_LIFT + 0.5) / 2.0, 0))
+		for k in 2:
+			var lh := (Config.BOSS_LIFT + 0.5) / 2.0
+			_block(tex, Vector3(2.6, lh, 3.2), Vector3(sx * (Config.TRACK_HALF + 1.7), lh * (k + 0.5), 0))
 	var eye := _mat(b["eye"], 1.0)
 	for sx in [-1.0, 1.0]:      # eyes on the face toward the runner (+Z)
 		_box(Vector3(2.4, 1.5, 0.4), eye, Vector3(sx * 2.9, Config.BOSS_LIFT + s * 0.68, s / 2.0 + 0.1))
@@ -79,10 +86,6 @@ func _build_model(b: Dictionary) -> void:
 	_model.scale = Vector3.ONE * b.get("model_h", 20.0)
 	_model.position.y = b.get("hover", 0.0)
 	_body.add_child(_model)
-	_overlay.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_overlay.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_overlay.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	_overlay.albedo_color = Color(0, 0, 0, 0)
 	for mi in _model.find_children("*", "MeshInstance3D", true, false):
 		var src: BaseMaterial3D = mi.mesh.surface_get_material(0)
 		var m: StandardMaterial3D = src.duplicate() if src else StandardMaterial3D.new()
@@ -127,12 +130,6 @@ func _animate_model(dt: float) -> void:
 			var u := clampf((24.0 - ahead()) / 24.0, 0.0, 1.0)
 			lift = h * 0.55 * sin(u * PI / 2.0)
 		_model.position.y = absf(sin(t * 3.2)) * 0.5 + lift
-	var c := Color(0, 0, 0, 0)
-	if _flash_t > 0.0:
-		c = Color(1, 1, 1, 0.7)
-	elif phase == "fight" and boss_phase() == 3:
-		c = Color(1, 0.15, 0.1, 0.12 + 0.1 * sin(t * 8.0))
-	_overlay.albedo_color = c
 
 
 func _mat(c: Color, glow: float) -> StandardMaterial3D:
@@ -147,11 +144,17 @@ func _mat(c: Color, glow: float) -> StandardMaterial3D:
 	return m
 
 
+func _block(name: String, size: Vector3, pos: Vector3) -> void:
+	var n := Kit.node(name, size)
+	n.position = pos
+	for mi in n.find_children("*", "MeshInstance3D", true, false):
+		mi.material_overlay = _overlay      # flash white when hit, pulse red when enraged
+	_body.add_child(n)
+
+
 func _box(size: Vector3, m: Material, pos: Vector3) -> void:
 	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
-	mi.mesh = bm
+	mi.mesh = Kit.soft_box(size)
 	mi.material_override = m
 	mi.position = pos
 	_body.add_child(mi)
@@ -254,6 +257,13 @@ func update(dt: float) -> void:
 		_body.position.y = 0.0
 	if _model:
 		_animate_model(dt)
+	# White flash when defeated, red pulse when enraged.
+	var c := Color(0, 0, 0, 0)
+	if _flash_t > 0.0:
+		c = Color(1, 1, 1, 0.7)
+	elif phase == "fight" and boss_phase() == 3:
+		c = Color(1, 0.15, 0.1, 0.12 + 0.1 * sin(Time.get_ticks_msec() / 1000.0 * 8.0))
+	_overlay.albedo_color = c
 	_update_throws(dt)
 
 
