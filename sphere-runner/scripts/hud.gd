@@ -283,6 +283,14 @@ func _build_menu() -> void:
 	sound_toggle.add_theme_font_size_override("font_size", 26)
 	sound_toggle.toggled.connect(func(on): Config.sound = on)
 	box.add_child(sound_toggle)
+	var models := CheckButton.new()
+	models.text = "Hero models"
+	models.button_pressed = Config.hero_models
+	models.add_theme_font_size_override("font_size", 26)
+	models.toggled.connect(func(on):
+		Config.hero_models = on
+		character_changed.emit())
+	box.add_child(models)
 	_button(box, "Play", Color("3d8bff")).pressed.connect(func(): play_pressed.emit())
 	best_label = _text(box, "", 22)
 	_text(box, "Boss test: start just before a boss (not saved)", 20)

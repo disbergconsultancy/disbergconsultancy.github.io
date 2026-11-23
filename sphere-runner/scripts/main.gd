@@ -81,8 +81,7 @@ func _ready() -> void:
 	boss = BossChase.new()
 	boss.setup(self)
 	spawner = Spawner.new(planet)
-	character = BlockCharacter.new()
-	add_child(character)
+	_make_character()
 	hitbox = MeshInstance3D.new()
 	hitbox.mesh = BoxMesh.new()
 	var wire := StandardMaterial3D.new()
@@ -106,7 +105,7 @@ func _ready() -> void:
 	hud.menu_pressed.connect(_to_menu)
 	hud.pause_pressed.connect(_toggle_pause)
 	hud.character_changed.connect(func():
-		character.build(Config.char_def())
+		_make_character()
 		Progress.save()
 		best = Progress.best_score()
 		hud.show_menu(best))
@@ -117,6 +116,9 @@ func _ready() -> void:
 	reset()
 	hud.show_menu(best)
 	var args := OS.get_cmdline_user_args()
+	if "blocks" in args or "heroes" in args:      # tests and shots: pick the look
+		Config.hero_models = "heroes" in args
+		_make_character()
 	if "--reel" in args:
 		# Animation reel: --reel <dir> [close|game] [idle] [char=X] -> PNG frames at 30 fps
 		var i := args.find("--reel")
@@ -145,6 +147,18 @@ func _ready() -> void:
 				_test["move"] = a.substr(5)
 			elif a == "skills" or a == "shop" or a == "over":
 				_test["screen"] = a
+
+
+## The hero model or the block figure (menu setting). Both have the same interface.
+func _make_character() -> void:
+	var want_hero := Config.hero_models
+	if character and is_instance_valid(character):
+		if (character is HeroCharacter) == want_hero:
+			character.build(Config.char_def())
+			return
+		character.queue_free()
+	character = HeroCharacter.new() if want_hero else BlockCharacter.new()
+	add_child(character)
 
 
 func _exit_tree() -> void:

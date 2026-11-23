@@ -325,15 +325,7 @@ static func p_hit() -> Dictionary:
 func update_pose(dt: float, state: String, s: Dictionary) -> void:
 	var t := Time.get_ticks_msec() / 1000.0
 	var grounded: bool = s["grounded"]
-	if state == "run" and grounded and s["slide"] <= 0.0:
-		run_phase += dt * (4.0 + s["speed"] * 0.42)
-	land_t = maxf(0.0, land_t - dt)
-	takeoff_t = maxf(0.0, takeoff_t - dt)
-	lane_t = maxf(0.0, lane_t - dt)
-	stumble_t = maxf(0.0, stumble_t - dt)
-	cheer_t = maxf(0.0, cheer_t - dt)
-	if crash_t >= 0.0:
-		crash_t += dt
+	var flip := _tick(dt, state, s)
 	var target: Dictionary
 	if state == "menu":
 		target = p_idle(t)
@@ -363,45 +355,9 @@ func update_pose(dt: float, state: String, s: Dictionary) -> void:
 			_blend(target, p_stumble(t), minf(1.0, stumble_t / 0.15))
 		if cheer_t > 0.0:
 			_blend(target, p_cheer(t), minf(1.0, cheer_t / 0.2))
-		if lane_t > 0.0:   # lane switch: a little hop, lean in, shoulders turn, outer arm flies out
-			var u := 1.0 - lane_t / 0.24
-			var bump := sin(PI * u)
-			if grounded and s["slide"] <= 0.0:
-				target["y"] = target.get("y", 0.0) + 0.16 * bump
-			target["rz"] = target.get("rz", 0.0) - lane_dir * 0.25 * bump
-			target["spine_y"] = target.get("spine_y", 0.0) - lane_dir * 0.35 * bump
-			if lane_dir > 0.0:
-				target["arm_lz"] = target.get("arm_lz", 0.0) - 0.9 * bump
-			else:
-				target["arm_rz"] = target.get("arm_rz", 0.0) + 0.9 * bump
-	# Springs: snappy, with a little overshoot; floppier when crashed.
-	var floppy := state == "hit" or state == "over"
-	var steps := 2
-	var h := dt / steps
-	for _i in steps:
-		for k in KEYS:
-			var kk: float = (BASE_K * 0.45 if floppy else BASE_K) * SOFT.get(k, 1.0)
-			var d := 2.0 * (0.3 if floppy else ZETA) * sqrt(kk)
-			vel[k] += ((target.get(k, 0.0) - pose[k]) * kk - vel[k] * d) * h
-			pose[k] += vel[k] * h
-		sq_v += (-sq * 300.0 - sq_v * 2.0 * 0.28 * sqrt(300.0)) * h
-		sq += sq_v * h
-	# Squash and stretch (volume kept), plus a small squash at each footfall.
-	var step_sq := 0.06 * pow(absf(sin(run_phase)), 8.0) if state == "run" and grounded and s["slide"] <= 0.0 else 0.0
-	var q := clampf(sq + step_sq, -0.3, 0.45)
-	scale = Vector3(1.0 / sqrt(1.0 - q), 1.0 - q, 1.0 / sqrt(1.0 - q))
-	dust_slide.emitting = state == "run" and grounded and s["slide"] > 0.0
-	pivot.position.y = hip_y + pose["y"]
-	var lean: float = s["lean"] * 0.12
-	var twist: float = s["twist"] * 0.35
-	var flip: float = -s.get("hop", -1.0) * TAU if s.get("hop", -1.0) >= 0.0 else 0.0   # forward somersault on a planet hop
-	if flip_t >= 0.0:      # air jump: a quick front flip
-		flip_t += dt / 0.45
-		if flip_t >= 1.0 or grounded:
-			flip_t = -1.0
-		else:
-			flip -= TAU * (1.0 - pow(1.0 - flip_t, 2.0))
-	pivot.rotation = Vector3(pose["rx"] + flip, pose["ry"] + twist, pose["rz"] + lean)
+		_lane_layer(target, grounded and s["slide"] <= 0.0, 1.0)
+	_springs(target, KEYS, dt, state == "hit" or state == "over")
+	_apply_pivot(s, flip)
 	j["spine"].rotation = Vector3(pose["spine"], pose["spine_y"], 0)
 	j["head"].rotation = Vector3(pose["head"], pose["head_y"], 0)
 	j["arm_l"].rotation = Vector3(pose["arm_lx"], 0, pose["arm_lz"])
@@ -412,6 +368,72 @@ func update_pose(dt: float, state: String, s: Dictionary) -> void:
 	j["thigh_r"].rotation = Vector3(pose["thigh_rx"], 0, pose["thigh_rz"])
 	j["shin_l"].rotation.x = pose["shin_l"]
 	j["shin_r"].rotation.x = pose["shin_r"]
+
+
+# --- Shared toon layer (also used by HeroCharacter) ---------------------------------
+
+## Timers, squash and stretch, dust and the air-jump flip. Returns the extra flip angle.
+func _tick(dt: float, state: String, s: Dictionary) -> float:
+	var grounded: bool = s["grounded"]
+	if state == "run" and grounded and s["slide"] <= 0.0:
+		run_phase += dt * (4.0 + s["speed"] * 0.42)
+	land_t = maxf(0.0, land_t - dt)
+	takeoff_t = maxf(0.0, takeoff_t - dt)
+	lane_t = maxf(0.0, lane_t - dt)
+	stumble_t = maxf(0.0, stumble_t - dt)
+	cheer_t = maxf(0.0, cheer_t - dt)
+	if crash_t >= 0.0:
+		crash_t += dt
+	for _i in 2:          # squash spring: bouncy
+		var h := dt / 2.0
+		sq_v += (-sq * 300.0 - sq_v * 2.0 * 0.28 * sqrt(300.0)) * h
+		sq += sq_v * h
+	# Squash and stretch (volume kept), plus a small squash at each footfall.
+	var step_sq := 0.06 * pow(absf(sin(run_phase)), 8.0) if state == "run" and grounded and s["slide"] <= 0.0 else 0.0
+	var q := clampf(sq + step_sq, -0.3, 0.45)
+	scale = Vector3(1.0 / sqrt(1.0 - q), 1.0 - q, 1.0 / sqrt(1.0 - q))
+	dust_slide.emitting = state == "run" and grounded and s["slide"] > 0.0
+	var flip: float = -s.get("hop", -1.0) * TAU if s.get("hop", -1.0) >= 0.0 else 0.0   # forward somersault on a planet hop
+	if flip_t >= 0.0:      # air jump: a quick front flip
+		flip_t += dt / 0.45
+		if flip_t >= 1.0 or grounded:
+			flip_t = -1.0
+		else:
+			flip -= TAU * (1.0 - pow(1.0 - flip_t, 2.0))
+	return flip
+
+
+## Lane switch: a little hop, lean in, shoulders turn, outer arm flies out (scaled by w).
+func _lane_layer(target: Dictionary, hop: bool, w: float) -> void:
+	if lane_t <= 0.0:
+		return
+	var bump := sin(PI * (1.0 - lane_t / 0.24))
+	if hop:
+		target["y"] = target.get("y", 0.0) + 0.16 * bump
+	target["rz"] = target.get("rz", 0.0) - lane_dir * 0.25 * bump
+	target["spine_y"] = target.get("spine_y", 0.0) - lane_dir * 0.35 * bump * w
+	if lane_dir > 0.0:
+		target["arm_lz"] = target.get("arm_lz", 0.0) - 0.9 * bump * w
+	else:
+		target["arm_rz"] = target.get("arm_rz", 0.0) + 0.9 * bump * w
+
+
+## Springs: snappy, with a little overshoot; floppier when crashed.
+func _springs(target: Dictionary, keys: Array, dt: float, floppy: bool) -> void:
+	var h := dt / 2.0
+	for _i in 2:
+		for k in keys:
+			var kk: float = (BASE_K * 0.45 if floppy else BASE_K) * SOFT.get(k, 1.0)
+			var d := 2.0 * (0.3 if floppy else ZETA) * sqrt(kk)
+			vel[k] += ((target.get(k, 0.0) - pose[k]) * kk - vel[k] * d) * h
+			pose[k] += vel[k] * h
+
+
+func _apply_pivot(s: Dictionary, flip: float) -> void:
+	pivot.position.y = hip_y + pose["y"]
+	var lean: float = s["lean"] * 0.12
+	var twist: float = s["twist"] * 0.35
+	pivot.rotation = Vector3(pose["rx"] + flip, pose["ry"] + twist, pose["rz"] + lean)
 
 
 ## Mixes the keys of b into a with weight w (keys missing in b count as 0).
