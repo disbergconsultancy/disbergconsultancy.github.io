@@ -1603,7 +1603,7 @@ function collide(dt) {
     if (it.kind === 'GATE') continue;
 
     // Close-call tracking for hazards the player is passing.
-    if (HAZARDS.has(it.kind) && !it.passed && it.kind !== 'PLATFORM') {
+    if (HAZARDS.has(it.kind) && !it.passed && it.kind !== 'PLATFORM' && it.kind !== 'PIT') {
       if (overlapZ) {
         const lat = Math.abs(it.x - px) - (it.hw + PLAYER.w / 2);
         const above = py - it.y1, below = it.y0 - (py + ph);
@@ -1619,6 +1619,12 @@ function collide(dt) {
 
     if (!overlapZ || !overlapX) continue;
     if (it.kind === 'RAMP') continue;
+    // Glowing floor: deadly if you touch it with your feet. It is thinner than the hitbox
+    // forgiveness margin, so it gets its own check instead of the box overlap below.
+    if (it.kind === 'PIT') {
+      if (py <= 0.05 && pw.orbit <= 0) { crash(it); if (state !== 'run') return; }
+      continue;
+    }
     if (it.kind === 'PLATFORM') {
       if (py < it.y1 - STEP_UP && pw.orbit <= 0) { crash(it); if (state !== 'run') return; }
       continue;
@@ -2119,7 +2125,7 @@ reset();
 idle();
 requestAnimationFrame(frame);
 window.__game = { get state() { return state; }, get score() { return score(); }, action, startRun,
-  get items() { return items.length; }, get py() { return py; }, get pw() { return pw; }, get kinds() { return items.map(i => i.kind); }, get near() { return items.filter(i => i.alive).map(i => ({ k: i.kind, x: i.x, d: aheadM(i), hd: i.hd })); }, get grounded() { return grounded; }, useAbility, set meter(v) { meter = v; }, get abilityT() { return abilityT; }, get abilityTotal() { return abilityTotal; }, get bossPhase() { return bossPhase; }, get bossLeft() { return bossDist - bossDone; }, get bossAhead() { return bossObj ? bossAhead() : null; }, startBossIntro, startBossFight, startBossTest, get bossKills() { return bossKills; }, get worldLap() { return worldLap; }, get ST() { return ST; }, get smashes() { return smashes; }, get airJumps() { return airJumps; }, set hold(v) { holding = v; }, get pose() { return { ...curPose }; }, get combo() { return combo; }, get theme() { return theme.name; }, get hopT() { return hopT; }, startHop, activate, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
+  get items() { return items.length; }, get py() { return py; }, get pw() { return pw; }, get kinds() { return items.map(i => i.kind); }, get near() { return items.filter(i => i.alive).map(i => ({ k: i.kind, x: i.x, d: aheadM(i), hd: i.hd })); }, get grounded() { return grounded; }, useAbility, set meter(v) { meter = v; }, get abilityT() { return abilityT; }, get abilityTotal() { return abilityTotal; }, get bossPhase() { return bossPhase; }, get bossLeft() { return bossDist - bossDone; }, get bossAhead() { return bossObj ? bossAhead() : null; }, startBossIntro, startBossFight, startBossTest, spawn: (k, m = 18) => addItem(k, angle + m / R, LX(lane)), get bossKills() { return bossKills; }, get worldLap() { return worldLap; }, get ST() { return ST; }, get smashes() { return smashes; }, get airJumps() { return airJumps; }, set hold(v) { holding = v; }, get pose() { return { ...curPose }; }, get combo() { return combo; }, get theme() { return theme.name; }, get hopT() { return hopT; }, startHop, activate, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
 </script>
 <script>
 window.addEventListener('error', e => { const el = document.getElementById('err'); el.style.display = 'block'; el.textContent = 'Error: ' + e.message; });
