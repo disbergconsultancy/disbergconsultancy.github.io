@@ -141,6 +141,8 @@
     <div class="opt"><div>Show hitbox<small>The box collisions actually use</small></div><input type="checkbox" id="optHitbox"></div>
     <button class="go" id="playBtn">Play</button>
     <p id="bestLine" style="text-align:center;margin-top:10px"></p>
+    <div class="opt" style="flex-wrap:wrap"><div>Boss test<small>Start on a planet's final lap, just before its boss. Not saved.</small></div>
+      <div class="seg" id="bossTest"><button data-v="0">Golem</button><button data-v="1">Colossus</button><button data-v="2">Titan</button><button data-v="3">Magma</button></div></div>
     <details style="margin-top:6px"><summary style="font-size:14px;font-weight:700;cursor:pointer">Balance stats (last 10 runs, this difficulty)</summary>
       <div id="stats"></div>
       <button class="go" id="resetStats" style="background:rgba(255,255,255,.12);font-size:14px;padding:8px">Reset stats</button>
@@ -1421,6 +1423,14 @@ function crash(it) {
 
 function gameOver() {
   state = 'over';
+  if (testRun) {
+    $('overStats').innerHTML = `<b>Boss test</b> (not saved)<br>Score ${score()} · Coins ${coins}<br>` +
+      (bossKills ? `<span style="color:#7dff8a;font-weight:900">${THEMES[testRun - 1].boss.name} DEFEATED</span>` :
+        `Boss: ${bossPhase === 'fight' ? Math.max(0, Math.ceil(bossDist - bossDone)) + ' m left to pass it' : 'chase not reached'}`);
+    $('overSkills').textContent = 'Skill tree';
+    show('over'); $('pauseBtn').classList.add('hidden');
+    return;
+  }
   const s = score(), key = 'best_' + modeKey();
   const best = store.get(key, 0), isBest = s > best;
   if (isBest) store.set(key, s);
@@ -2054,9 +2064,32 @@ function paintCharLevels() {
   $('skillsBtn').textContent = fp ? `Skill tree (${fp} point${fp > 1 ? 's' : ''} to spend)` : 'Skill tree';
 }
 
+let testRun = 0, lastStart = () => startRun();
+function startBossTest(idx) {
+  initAudio();
+  reset();
+  testRun = idx + 1;
+  lastStart = () => startBossTest(idx);
+  for (const it of items) removeItem(it);
+  items = [];
+  themeIdx = idx; applyTheme(THEMES[idx]);
+  R = targetR = shrinkFrom = THEMES[idx].R; shrinkT = 1;
+  layoutWorld();
+  const TAU = Math.PI * 2;
+  worldLap = theme.lapsToBoss - 1;
+  worldStart = angle - worldLap * TAU - (TAU - 160 / R);      // ~160 m before the chase starts
+  nextSpawn = angle + 25 / R; spawnedChunks = 3;
+  speed = P().start + (P().max - P().start) * 0.4;             // a realistic mid-run speed
+  updateSpawning();
+  startBossIntro();
+  state = 'run';
+  show(null);
+  $('pauseBtn').classList.remove('hidden');
+}
 function startRun() {
   initAudio();
   reset();
+  testRun = 0; lastStart = () => startRun();
   state = 'run';
   show(null);
   $('pauseBtn').classList.remove('hidden');
@@ -2067,8 +2100,9 @@ function togglePause() {
   else if (state === 'paused') { state = 'run'; show(null); last = performance.now(); }
 }
 $('playBtn').addEventListener('click', startRun);
+$('bossTest').addEventListener('click', e => { const b = e.target.closest('button'); if (b) startBossTest(+b.dataset.v); });
 $('resetStats').addEventListener('click', () => { for (const k of Object.keys(CHARS)) for (const d of Object.keys(DIFF)) store.set('runs_' + k + '_' + d, []); refreshMenu(); });
-$('againBtn').addEventListener('click', startRun);
+$('againBtn').addEventListener('click', () => lastStart());
 $('menuBtn').addEventListener('click', () => { state = 'menu'; show('menu'); refreshMenu(); });
 $('quitBtn').addEventListener('click', () => { state = 'menu'; show('menu'); $('pauseBtn').classList.add('hidden'); refreshMenu(); });
 $('resumeBtn').addEventListener('click', togglePause);
@@ -2083,7 +2117,7 @@ reset();
 idle();
 requestAnimationFrame(frame);
 window.__game = { get state() { return state; }, get score() { return score(); }, action, startRun,
-  get items() { return items.length; }, get py() { return py; }, get pw() { return pw; }, get kinds() { return items.map(i => i.kind); }, get near() { return items.filter(i => i.alive).map(i => ({ k: i.kind, x: i.x, d: aheadM(i), hd: i.hd })); }, get grounded() { return grounded; }, useAbility, set meter(v) { meter = v; }, get abilityT() { return abilityT; }, get abilityTotal() { return abilityTotal; }, get bossPhase() { return bossPhase; }, get bossLeft() { return bossDist - bossDone; }, get bossAhead() { return bossObj ? bossAhead() : null; }, startBossIntro, startBossFight, get bossKills() { return bossKills; }, get worldLap() { return worldLap; }, get ST() { return ST; }, get smashes() { return smashes; }, get airJumps() { return airJumps; }, set hold(v) { holding = v; }, get pose() { return { ...curPose }; }, get combo() { return combo; }, get theme() { return theme.name; }, get hopT() { return hopT; }, startHop, activate, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
+  get items() { return items.length; }, get py() { return py; }, get pw() { return pw; }, get kinds() { return items.map(i => i.kind); }, get near() { return items.filter(i => i.alive).map(i => ({ k: i.kind, x: i.x, d: aheadM(i), hd: i.hd })); }, get grounded() { return grounded; }, useAbility, set meter(v) { meter = v; }, get abilityT() { return abilityT; }, get abilityTotal() { return abilityTotal; }, get bossPhase() { return bossPhase; }, get bossLeft() { return bossDist - bossDone; }, get bossAhead() { return bossObj ? bossAhead() : null; }, startBossIntro, startBossFight, startBossTest, get bossKills() { return bossKills; }, get worldLap() { return worldLap; }, get ST() { return ST; }, get smashes() { return smashes; }, get airJumps() { return airJumps; }, set hold(v) { holding = v; }, get pose() { return { ...curPose }; }, get combo() { return combo; }, get theme() { return theme.name; }, get hopT() { return hopT; }, startHop, activate, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
 </script>
 <script>
 window.addEventListener('error', e => { const el = document.getElementById('err'); el.style.display = 'block'; el.textContent = 'Error: ' + e.message; });
