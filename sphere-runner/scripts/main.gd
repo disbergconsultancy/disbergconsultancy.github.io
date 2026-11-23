@@ -26,6 +26,7 @@ var slide_t := 0.0
 var jump_buffer_t := 0.0
 var float_t := 0.0
 var dash_t := 0.0
+var ice_vx := 0.0              # sideways speed while sliding on ice
 var hit_t := 0.0
 var pts := 0.0
 var coins := 0
@@ -263,6 +264,7 @@ func reset() -> void:
 	jump_buffer_t = 0.0
 	float_t = 0.0
 	dash_t = 0.0
+	ice_vx = 0.0
 	pts = 0.0
 	coins = 0
 	close_calls = 0
@@ -468,8 +470,6 @@ func _on_action(dir: String) -> void:
 		return
 	match dir:
 		"left", "right":
-			if _on_ice():
-				return               # Ice lane: no switching while on the ice
 			var nl := clampi(lane + (-1 if dir == "left" else 1), -1, 1)
 			if nl != lane:
 				character.event("lane", nl - lane)
@@ -758,7 +758,13 @@ func _move_player(dt: float) -> void:
 	if hop_t > 0.0:
 		px = move_toward(px, lane * Config.LANE_W, Config.LANE_SPEED * dt)
 		return
-	px = move_toward(px, lane * Config.LANE_W, Config.LANE_SPEED * st["lane_mul"] * (1.2 if slip_t > 0.0 else 1.0) * (2.0 * st["air_dash_mul"] if dash_t > 0.0 else 1.0) * dt)
+	if _on_ice():
+		# Ice: no grip. A lane switch is a slow, springy slide that overshoots and settles.
+		ice_vx += ((lane * Config.LANE_W - px) * Config.ICE_PULL - ice_vx * Config.ICE_DAMP) * dt
+		px += ice_vx * dt
+	else:
+		ice_vx = 0.0
+		px = move_toward(px, lane * Config.LANE_W, Config.LANE_SPEED * st["lane_mul"] * (1.2 if slip_t > 0.0 else 1.0) * (2.0 * st["air_dash_mul"] if dash_t > 0.0 else 1.0) * dt)
 	if pw["orbit"] > 0.0:
 		py += (Config.ORBIT_H - py) * minf(1.0, dt * 3.0)   # float high above the globe
 		vy = 0.0
@@ -918,7 +924,7 @@ func _render(dt: float) -> void:
 		"grounded": grounded, "slide": slide_t, "vy": vy, "speed": speed,
 		"hop": 1.0 - hop_t / Config.HOP_TIME if hop_t > 0.0 else -1.0, "orbit": pw["orbit"] > 0.0,
 		"floating": swipe.holding and float_t > 0.0 and float_t < st["float_time"] and vy < 3.0,
-		"lean": px - lane * Config.LANE_W, "twist": (lane * Config.LANE_W - px) if dash_t > 0.0 else 0.0})
+		"skid": absf(ice_vx) > 1.5, "lean": px - lane * Config.LANE_W, "twist": (lane * Config.LANE_W - px) if dash_t > 0.0 else 0.0})
 	hitbox.scale = Vector3(Config.PLAYER_SIZE.x, h, Config.PLAYER_SIZE.z)
 	hitbox.position = Vector3(px, planet.radius + py + h / 2.0, 0.0)
 	for it in planet.items:
@@ -1007,12 +1013,8 @@ func _bot_drive() -> void:
 	for it in planet.items:
 		if not it.alive or not (it.kind in Config.HAZARDS or it.kind == "ICE"):
 			continue
-		if it.kind == "ICE":            # the bot treats an ice lane as blocked (a boulder waits at its end)
-			var dd := _ahead_m(it) - it.hd
-			for l in [-1, 0, 1]:
-				if absf(it.x - Config.lane_x(l)) < 1.0:
-					lethal[l] = minf(lethal[l], maxf(dd, 0.0))
-			continue
+		if it.kind == "ICE":
+			continue                    # ice only slows lane switches
 		var d := _ahead_m(it)
 		if d < -(it.hd + 0.5) or d > 30.0:
 			continue

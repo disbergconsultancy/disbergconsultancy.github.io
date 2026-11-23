@@ -24,7 +24,6 @@ var _mats: Array[StandardMaterial3D] = []
 var _rng := RandomNumberGenerator.new()
 var _last_phase := 0
 var _used := {}               # signature moves already announced this chase
-var _lava_until := -1.0       # chase metres until which a lava lane is active
 var _pending: Array = []      # delayed steps of multi-part moves: [{ "t": seconds, "fn": Callable }]
 var _gate: Array[Item] = []   # Gate slam legs on the track
 var _gate_state := 0          # 0 open, 1 closed (gap shown), 2 gap shift announced, 3 shifted
@@ -201,7 +200,6 @@ func start_fight() -> void:
 	_attack_t = 0.4
 	_last_phase = 0
 	_used = {}
-	_lava_until = -1.0
 	_pending.clear()
 	_gate.clear()
 	_gate_state = 0
@@ -328,13 +326,9 @@ func _schedule(dt: float) -> void:
 	if ph >= 2:
 		pool.merge(bt["signature"])
 		pool.erase("gate_slam")      # happens on its own at the final pass
-	if done < _lava_until or _ice_ahead():
-		pool.erase("block")   # a lava or ice lane is active: never close the other two lanes
 	var kind := _pick(pool)
 	if kind == "stomp" and (_stomp_t > 0.0 or a < 22.0):
 		kind = "smash"
-	if kind == "ice_lane" and _wall_ahead():
-		kind = "smash"        # the ice could fill a wall's open lane: no way through
 	if (kind == "rolling_boulder" and a < 30.0) or (kind == "ice_lane" and a < 38.0):
 		kind = "smash"        # these need room between you and the boss
 	if kind == "quake_rhythm" and (a < 22.0 or _stomp_t > 0.0 or _pending.size() > 0):
@@ -348,17 +342,22 @@ func _schedule(dt: float) -> void:
 	# Threat budget: the move's cost sets how long until the next one (minimum ~14 m apart).
 	var rate: float = bt["rate"] * (1.25 if ph == 3 else 1.1 if ph == 2 else 1.0)
 	_attack_t = maxf(Config.BOSS_MOVES[kind]["cost"] / rate, 14.0 / maxf(game.speed, 1.0))
-	var label: String = Config.BOSS_MOVES[kind]["label"]
-	if label != "" and not _used.has(kind):
-		_used[kind] = true
-		game.hud.flash(label + "!")    # announce a signature move the first time
-	if _bb:
-		_bb.on_attack()
-	if not _do_move(kind, a, target):
-		_throw_with_combo(kind, target, ph, bt)
-	for it in game.planet.items:     # remember which move made each item (fairness reports)
-		if it.boss and not it.has_meta("move"):
-			it.set_meta("move", kind)
+	# Fair-play: make the move, then check there is still a way through; if not, take it
+	# back and try a single boulder instead (or nothing this time).
+	for attempt in [kind, "smash"]:
+		var before: int = game.planet.items.size()
+		if not _do_move(attempt, a, target):
+			_throw_with_combo(attempt, target, ph, bt)
+		if path_ok():
+			if _bb:
+				_bb.on_attack()
+			var label: String = Config.BOSS_MOVES[attempt]["label"]
+			if label != "" and not _used.has(attempt):
+				_used[attempt] = true
+				game.hud.flash(label + "!")    # announce a signature move the first time
+			return
+		_take_back(before)
+	_attack_t = 0.3
 
 
 ## Forces one move right now (screenshots and tests).
@@ -410,7 +409,7 @@ func _throw_with_combo(kind: String, target: float, ph: int, bt: Dictionary) -> 
 	# Later phases: combos (a second throw right behind the first), if this boss does them.
 	# Fair-play: the combo keeps the first throw's safe lane free, so one answer covers both.
 	if ph >= 2 and target > 20.0 and _rng.randf() < bt["combo"] * (1.6 if ph == 3 else 1.0):
-		var combo_kind := "smash" if bt["throws"]["block"] == 0 or done < _lava_until or _ice_ahead() or _rng.randf() < 0.5 else "block"
+		var combo_kind := "smash" if bt["throws"]["block"] == 0 or _rng.randf() < 0.5 else "block"
 		_throw(combo_kind, game.angle + (target - 9.0) / planet.radius, safe)
 
 
@@ -453,7 +452,6 @@ func _lava_trail(target: float) -> void:
 	it.boss = true
 	it.set_meta("arm_t", 0.9)          # warning time before it becomes deadly
 	planet.set_lava_armed(it, false)
-	_lava_until = done + start + 20.0 + 5.0
 	_wind_t = 0.0
 
 
@@ -500,8 +498,7 @@ func _meteor(lane: int) -> void:
 	if target < 13.0:
 		return
 	var phi: float = game.angle + target / planet.radius
-	if _is_open_lane(phi, lane):
-		return                                  # never in a wall's open lane
+	var before := planet.items.size()
 	var m := planet.add_item("MARK", phi, Config.lane_x(lane), {"w": Config.LANE_W * 0.9})
 	m.boss = true
 	var it := planet.add_item("FIST", phi, Config.lane_x(lane), {"w": 1.6, "h": 1.8, "depth": 1.6})
@@ -511,10 +508,12 @@ func _meteor(lane: int) -> void:
 	it.marks = [m]
 	it.set_meta("meteor", true)
 	_wind_t = 0.0
+	if not path_ok():
+		_take_back(before)                   # this one would leave no way through: skip it
 
 
-## Ice lane (Ice Titan): one lane freezes for 16 m with a boulder at its end, and you
-## cannot switch lanes while on the ice. Answer: leave that lane before the ice.
+## Ice lane (Ice Titan): one lane freezes for 16 m with a boulder at its end; on ice a
+## lane switch is a slow slide. Answer: leave that lane before the ice, or switch early.
 func _ice_lane() -> void:
 	var planet: Planet = game.planet
 	var lane: int = [-1, 0, 1][_rng.randi() % 3]
@@ -541,8 +540,6 @@ func _decoy(target: float) -> void:
 	var lane := int(round(it.x / Config.LANE_W))
 	var to: int = lane + (1 if lane == -1 else -1 if lane == 1 else [-1, 1][_rng.randi() % 2])
 	# Never jump into the open lane of a wall nearby: that would leave no way through.
-	if _is_open_lane(it.phi, to):
-		return                          # stays an ordinary boulder
 	it.set_meta("decoy_to", Config.lane_x(to))
 
 
@@ -731,13 +728,12 @@ func _throw(kind: String, phi: float, keep_free := -2, coins := true) -> int:
 	var free_lane := 0
 	match kind:
 		"smash":   # red boulder on one lane: switch lanes
-			var choices := [-1, 0, 1].filter(func(x): return x != keep_free and not _is_open_lane(phi, x))
-			var l: int = choices.pick_random() if not choices.is_empty() else ([-1, 0, 1].filter(func(x): return x != keep_free)).pick_random()
+			var l: int = ([-1, 0, 1].filter(func(x): return x != keep_free)).pick_random()
 			mark.call([l])
 			it = planet.add_item("FIST", phi, Config.lane_x(l), {"w": 2.0})
 			free_lane = ([-1, 0, 1].filter(func(x): return x != l)).pick_random()
 		"block":   # red wall over two lanes: take the open one
-			var open: int = keep_free if keep_free != -2 else _clear_lane(phi)
+			var open: int = keep_free if keep_free != -2 else [-1, 0, 1][_rng.randi() % 3]
 			var lanes := [-1, 0, 1].filter(func(x): return x != open)
 			mark.call(lanes)
 			free_lane = open
@@ -768,48 +764,85 @@ func _throw(kind: String, phi: float, keep_free := -2, coins := true) -> int:
 	return free_lane
 
 
-## A lane with no other lane-blocking throw within 14 m of phi (so the open lane of a wall
-## is really open), picked at random among the clear ones.
-## True if a boss wall within 16 m of phi leaves `lane` as its open lane: nothing else may
-## land there, or the wall would have no way through.
-func _is_open_lane(phi: float, lane: int) -> bool:
+## Removes items made since the item list had `count` entries (a move that was taken back).
+func _take_back(count: int) -> void:
 	var planet: Planet = game.planet
-	for w in planet.items:
-		if w.boss and w.alive and w.kind == "BLOCK" and absf(w.phi - phi) * planet.radius < 16.0 \
-				and absf(w.x - Config.lane_x(lane)) >= w.hw + 0.3:
-			return true
-	return false
+	while planet.items.size() > count:
+		var it: Item = planet.items.pop_back()
+		planet.remove_item(it)
 
 
-## A 2-lane wall from the boss still ahead of the runner.
-func _wall_ahead() -> bool:
-	for it in game.planet.items:
-		if it.boss and it.kind == "BLOCK" and it.alive and game._ahead_m(it) > -it.hd:
-			return true
-	return false
-
-
-## An ice lane still ahead of the runner (you cannot cross it: no switching on ice).
-func _ice_ahead() -> bool:
-	for it in game.planet.items:
-		if it.kind == "ICE" and it.alive and game._ahead_m(it) > -it.hd:
-			return true
-	return false
-
-
-func _clear_lane(phi: float) -> int:
+## The general fairness check: is there still a way through everything on the track?
+## Lanes are blocked (over a stretch of track) by lane-filling things; a lane switch
+## takes a stretch of track too (longer on ice). Starting from the runner's lane, some
+## lane must be reachable at the far end. Jump and slide hazards are answered in place
+## and are kept apart by the "one jump at a time" rule.
+func path_ok() -> bool:
+	const STEP := 0.5
+	const N := 140                                  # 70 m ahead
 	var planet: Planet = game.planet
-	var clear := [-1, 0, 1]
+	var speed: float = maxf(game.speed, 1.0)
+	var blocked := []                               # per slice: [lane -1, 0, 1] blocked?
+	var icy := []
+	for s in N:
+		blocked.append([false, false, false])
+		icy.append([false, false, false])
+	var mark := func(d0: float, d1: float, x: float, hw: float, arr: Array) -> void:
+		for s in range(maxi(0, int(d0 / STEP)), mini(N, int(ceil(d1 / STEP)) + 1)):
+			for l in 3:
+				if absf(x - Config.lane_x(l - 1)) < hw + Config.PLAYER_SIZE.x * 0.5:
+					arr[s][l] = true
 	for it in planet.items:
-		if it.boss and it.alive and it.kind in ["FIST", "ROLLER", "BLOCK", "LEG"] and absf(it.phi - phi) * planet.radius < 16.0:
-			var xs := [it.x]               # also where it is going: a decoy's new lane, a roller's switch
-			if it.has_meta("decoy_to"):
-				xs.append(it.get_meta("decoy_to"))
-			if it.has_meta("to_x"):
-				xs.append(it.get_meta("to_x"))
-			for x in xs:
-				clear = clear.filter(func(l): return absf(x - Config.lane_x(l)) >= it.hw + 0.3)
-	return clear[_rng.randi() % clear.size()] if not clear.is_empty() else [-1, 0, 1][_rng.randi() % 3]
+		if not it.alive:
+			continue
+		var d: float = game._ahead_m(it)
+		if d + it.hd < -1.0 or d - it.hd > N * STEP:
+			continue
+		if it.kind == "ICE":
+			mark.call(d - it.hd, d + it.hd, it.x, it.hw, icy)
+			continue
+		if not (it.kind in ["FIST", "BLOCK", "ROLLER", "LEG", "LAVA", "WALL", "MOVER"]):
+			continue
+		var xs := [it.x]                            # also where it is going
+		if it.has_meta("decoy_to"):
+			xs.append(it.get_meta("decoy_to"))
+		if it.has_meta("to_x"):
+			xs.append(it.get_meta("to_x"))
+		if it.kind == "MOVER":
+			xs = [-Config.LANE_W, 0.0, Config.LANE_W]
+		var near := d - it.hd - 1.0
+		if it.vel > 0.0:                            # rolling toward the runner: met sooner
+			near = d * speed / (speed + it.vel) - it.hd - 1.0
+		for x in xs:
+			mark.call(near, d + it.hd + 1.0, x, it.hw, blocked)
+	# Reachable lanes per slice, from the runner's lane now.
+	var reach := []
+	for s in N:
+		reach.append([false, false, false])
+	var start: int = clampi(game.lane, -1, 1) + 1
+	if blocked[0][start]:
+		return true                                 # already inside something: not this move's doing
+	reach[0][start] = true
+	var sw := int(ceil(speed * (Config.LANE_W / Config.LANE_SPEED + 0.15) / STEP))   # a switch, plus reaction
+	var sw_ice := int(ceil(speed * 0.55 / STEP))
+	for s in N - 1:
+		for l in 3:
+			if not reach[s][l]:
+				continue
+			if not blocked[s + 1][l]:
+				reach[s + 1][l] = true
+			for nl in [l - 1, l + 1]:
+				if nl < 0 or nl > 2:
+					continue
+				var span: int = sw_ice if icy[s][l] else sw
+				var ok := true
+				for k in range(s, mini(N, s + span + 1)):
+					if blocked[k][l] or blocked[k][nl]:
+						ok = false
+						break
+				if ok and s + span < N:
+					reach[s + span][nl] = true
+	return reach[N - 1][0] or reach[N - 1][1] or reach[N - 1][2]
 
 
 ## Throws fly in an arc from the boss onto their markers, then stay as obstacles.

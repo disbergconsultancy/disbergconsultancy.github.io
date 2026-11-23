@@ -450,7 +450,7 @@ func _tick(dt: float, state: String, s: Dictionary) -> float:
 	var step_sq := 0.06 * pow(absf(sin(run_phase)), 8.0) if state == "run" and grounded and s["slide"] <= 0.0 else 0.0
 	var q := clampf(sq + step_sq, -0.3, 0.45)
 	scale = Vector3(1.0 / sqrt(1.0 - q), 1.0 - q, 1.0 / sqrt(1.0 - q))
-	dust_slide.emitting = state == "run" and grounded and s["slide"] > 0.0
+	dust_slide.emitting = state == "run" and grounded and (s["slide"] > 0.0 or s.get("skid", false))   # slide dust / ice spray
 	var flip: float = -s.get("hop", -1.0) * TAU if s.get("hop", -1.0) >= 0.0 else 0.0   # forward somersault on a planet hop
 	if flip_t >= 0.0:      # air jump: a quick front flip
 		flip_t += dt / 0.45

@@ -16,15 +16,17 @@ The Godot project (`sphere-runner/`) is the main version; the web prototype stay
 
 ## Next (in priority order)
 
-### 1. Boss system: unique bosses with signature moves (IN PROGRESS)
-**Built (Godot):** data model per boss (archetype, base throws, signature moves, rate), phases (base / signature
-unlocked at 30% / enraged at 80%), threat budget (move costs), and all eight signature moves:
-Minotaur (was Stone Golem): Vine sweep; Sand Wyvern (was Sand Colossus): Rolling boulder, Meteor shower; Ice Titan: Ice lane, Quake rhythm, Decoy;
-Magma Giant: Lava trail, Quake rhythm, Decoy, Gate slam (at the final pass). Fairness check with a bot (10 chases per
-boss; all bosses 10/10). The check found and fixed an impossible attack (a 2-lane wall with the middle lane open
-covered all three lanes, also fixed in the web prototype) and a quake rhythm overlapping the next throw; combos keep
-the first throw's safe lane open, and a multi-part move blocks other attacks until it is over.
-**Still to do:** the other archetypes, the boss forge for endless play.
+### 1. Boss system: unique bosses with signature moves (BUILT)
+**Built (Godot):** data model per boss, phases, threat budget, all eight signature moves, and five archetypes with
+block bodies and their own final pass: Minotaur (gate-walker: run under it), Sand Wyvern (flyer: it swoops low,
+slide), Ice Titan (roller: it swerves into a side lane, overtake), Magma Wyrm (burrower: surfaces to attack; Gate slam
+lava pillars), Twins (forge: they stomp into the outer lanes, pass between them). **Boss forge:** after the fourth
+planet every boss is generated (archetype, planet signature moves, rising threat, name, eyes); Forge test button.
+**Fair play:** one general path check: before a move is committed, the boss checks that a way through still exists
+(lanes blocked over the next 70 m, lane switches take track, slower on ice); otherwise it takes the move back and
+throws a single boulder. Plus: one jump attack at a time, no attacks just before a final pass. Ice is slippery
+(slow, sliding lane switches) instead of locking lanes. The fairness bot plays the four bosses and a forged boss
+of every archetype: all 10/10.
 
 Goal: every boss feels different, and we can make many more without hand-building each one.
 A boss is **composed from parts**, all data-driven:

@@ -12,6 +12,8 @@ const GRAVITY := 45.0
 const JUMP_V := 14.0
 const SLAM_V := -26.0
 const LANE_SPEED := 17.0            # m/s sideways
+const ICE_PULL := 26.0              # on ice a lane switch is a spring: slow (~0.35 s), overshoots ~0.4 m
+const ICE_DAMP := 5.0
 const HIT_SHRINK := 0.12            # collision forgiveness
 const JUMP_BUFFER := 0.15           # a jump swiped just before landing still counts
 const FLOAT_TIME := 0.45            # hold after a jump to float
@@ -63,7 +65,7 @@ const KIND := {
 	"ROLLER": {"h": 2.2, "y0": 0.0, "d": 2.2, "color": Color("d93333")},
 	"LAVA": {"h": 0.06, "y0": 0.0, "d": 20.0, "color": Color("ff4a1a")},
 	"VINE": {"h": 1.4, "y0": 1.0, "d": 1.2, "color": Color("d940cc")},     # slide under (purple)
-	"ICE": {"h": 0.05, "y0": 0.0, "d": 16.0, "color": Color("9fe8ff")},    # no lane switches while on it
+	"ICE": {"h": 0.05, "y0": 0.0, "d": 16.0, "color": Color("9fe8ff")},    # slippery: lane switches are slow
 	"LEG": {"h": 6.5, "y0": 0.0, "d": 3.2, "color": Color("d93333")},
 	"SWOOP": {"h": 4.4, "y0": 1.0, "d": 3.0, "color": Color("d940cc")},  # a flyer swooping low: slide under      # Gate slam: boss legs on the track
 }
@@ -85,7 +87,7 @@ const BOSS_MOVES := {
 	"lava_trail": {"cost": 2.0, "label": "LAVA TRAIL"},             # a lane of lava for 20 m
 	"vine_sweep": {"cost": 1.2, "label": "VINE SWEEP"},             # vines over two lanes at slide height
 	"meteor_shower": {"cost": 2.2, "label": "METEOR SHOWER"},       # four small meteors in a row, weave
-	"ice_lane": {"cost": 1.9, "label": "ICE LANE"},                 # frozen lane (no switching) with a boulder at its end
+	"ice_lane": {"cost": 1.9, "label": "ICE LANE"},                 # slippery lane (slow switching) with a boulder at its end
 	"quake_rhythm": {"cost": 2.2, "label": "QUAKE RHYTHM"},         # three stomp waves in a beat
 	"decoy": {"cost": 1.2, "label": "DECOY"},                       # the marker jumps lanes mid-flight
 	"gate_slam": {"cost": 0.0, "label": "GATE SLAM"},               # at the final pass: legs close in, one moving gap
