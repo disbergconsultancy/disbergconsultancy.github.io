@@ -20,7 +20,7 @@ Everything is built in code (no editor scenes besides `scenes/main.tscn`), so it
 | `scripts/boss.gd` | Boss chase and boss move system: phases (base throws, signature moves, enraged), threat budget per boss, base throws onto red markers, stomp waves, eight signature moves, Gate slam at the final pass, defeat when you run underneath |
 | `scripts/spawner.gd` | Obstacle patterns (rows, ramps/roofs, corridor, zigzag, glowing floor, jump-slide, movers) and wave/calm pacing |
 | `scripts/item.gd` | One obstacle/coin/surface: logical box for collisions + visual parts |
-| `scripts/character.gd` | Block figure on a humanoid joint layout with blended poses (run, jump, float, slam, slide, land, crash) |
+| `scripts/character.gd` | Block figure on a humanoid joint layout, toon animation: poses on springs (overshoot, follow-through), squash and stretch, one-off moves (takeoff, air-jump flip, lane hop, slide dust, landing dust, stumble, crash flop, cheer), menu idle |
 | `scripts/swipe_input.gd` | Swipes (vertical-friendly zones), taps, double-taps, hold |
 | `scripts/hud.gd` | HUD, ability meter, power-up list, boss bar, menu (character, difficulty, sound, boss test, stats), skill tree, core shop, crash screen |
 | `scripts/sfx.gd` | Synthesized sound effects, rendered once at startup (no audio files) |

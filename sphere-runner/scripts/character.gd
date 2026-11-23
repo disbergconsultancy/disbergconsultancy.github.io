@@ -2,16 +2,23 @@ class_name BlockCharacter
 extends Node3D
 ## A block figure on a standard humanoid joint layout (hips, spine, head, arms,
 ## forearms, thighs, shins). It only *shows* the game state: gameplay never waits for
-## an animation. Poses are blended (~0.1 s crossfade); lean, twist and flip are layered on top.
-## Swap it later for a rigged model with the same named poses.
+## an animation. Toon style: every joint follows its target pose on a spring (snappy,
+## with a little overshoot), the head and forearms lag behind (follow-through), the body
+## squashes and stretches, and short one-off moves (takeoff, flip, lane hop, stumble,
+## crash, cheer) are layered on top. Swap it later for a rigged model with the same poses.
 
-const KEYS := ["y", "rx", "ry", "rz", "spine", "head", "arm_lx", "arm_lz", "arm_rx", "arm_rz",
+const KEYS := ["y", "rx", "ry", "rz", "spine", "spine_y", "head", "head_y", "arm_lx", "arm_lz", "arm_rx", "arm_rz",
 	"fore_l", "fore_r", "thigh_lx", "thigh_lz", "thigh_rx", "thigh_rz", "shin_l", "shin_r"]
+## Spring stiffness per joint (x the base). Lower = lags behind = follow-through.
+const SOFT := {"head": 0.4, "head_y": 0.4, "fore_l": 0.5, "fore_r": 0.5, "arm_lz": 0.7, "arm_rz": 0.7, "spine_y": 0.7}
+const BASE_K := 520.0       # spring stiffness
+const ZETA := 0.5           # damping: < 1 overshoots a little, then settles
 var hip_y := 0.66
 
 var pivot := Node3D.new()      # at the hips: tilts, leans and flips rotate here
 var j := {}                    # joints by name
-var pose := {}                 # current blended pose
+var pose := {}                 # current pose
+var vel := {}                  # spring velocity per joint
 var run_phase := 0.0
 var land_t := 0.0
 var def := {}
@@ -20,6 +27,20 @@ var limb_mat := StandardMaterial3D.new()
 var accent_mat := StandardMaterial3D.new()
 var head_mat := StandardMaterial3D.new()
 var visor_mat := StandardMaterial3D.new()
+
+# Squash and stretch: sq > 0 squashes (wide and low), sq < 0 stretches. A bouncy spring.
+var sq := 0.0
+var sq_v := 0.0
+# One-off moves (seconds left, or progress for the flip / crash).
+var takeoff_t := 0.0
+var flip_t := -1.0
+var lane_t := 0.0
+var lane_dir := 0.0
+var stumble_t := 0.0
+var cheer_t := 0.0
+var crash_t := -1.0
+var dust_slide: CPUParticles3D
+var dust_land: CPUParticles3D
 
 
 func _ready() -> void:
@@ -30,8 +51,103 @@ func _ready() -> void:
 	visor_mat.emission_energy_multiplier = 0.4
 	body_mat.emission_enabled = true
 	body_mat.emission_energy_multiplier = 0.0
+	for k in KEYS:
+		vel[k] = 0.0
 	add_child(pivot)
+	dust_slide = _dust(false)
+	dust_land = _dust(true)
 	build(Config.char_def())
+
+
+## Toon dust: little blocks that puff up and drift behind the runner.
+func _dust(burst: bool) -> CPUParticles3D:
+	var d := CPUParticles3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3.ONE * 0.14
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bm.material = m
+	d.mesh = bm
+	d.local_coords = false
+	d.emitting = false
+	d.amount = 16 if burst else 20
+	d.lifetime = 0.45
+	d.one_shot = burst
+	d.explosiveness = 0.95 if burst else 0.0
+	d.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	d.emission_box_extents = Vector3(0.3, 0.02, 0.15)
+	d.direction = Vector3(0, 0.5, 1) if not burst else Vector3(0, 0.35, 0.4)
+	d.spread = 35.0 if not burst else 80.0
+	d.initial_velocity_min = 2.0
+	d.initial_velocity_max = 4.5
+	d.gravity = Vector3(0, -5, 0)
+	d.scale_amount_min = 0.6
+	d.scale_amount_max = 1.3
+	var c := Curve.new()
+	c.add_point(Vector2(0, 1))
+	c.add_point(Vector2(1, 0.1))
+	d.scale_amount_curve = c
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 0.97, 0.9, 0.9))
+	g.set_color(1, Color(1, 0.97, 0.9, 0.0))
+	d.color_ramp = g
+	d.position = Vector3(0, 0.05, 0.1)
+	add_child(d)
+	return d
+
+
+## Clears one-off moves and springs (new run, character change).
+func reset_anim() -> void:
+	sq = 0.0
+	sq_v = 0.0
+	takeoff_t = 0.0
+	flip_t = -1.0
+	lane_t = 0.0
+	stumble_t = 0.0
+	cheer_t = 0.0
+	crash_t = -1.0
+	for k in KEYS:
+		vel[k] = 0.0
+	scale = Vector3.ONE
+
+
+## Squash (amount > 0) or stretch (amount < 0); the body springs back with a wobble.
+func kick(amount: float) -> void:
+	sq = clampf(amount * 0.3, -0.25, 0.38)
+	sq_v = 0.0
+
+
+## One-off moves, called by the game: jump, jump2 (air jump: front flip), land (arg 1 = hard),
+## lane (arg = -1 left / 1 right), slide, stumble, crash, cheer.
+func event(name: String, arg := 0.0) -> void:
+	match name:
+		"jump":
+			takeoff_t = 0.14
+			kick(-0.8)
+		"jump2":
+			flip_t = 0.0
+			kick(-0.6)
+		"land":
+			land_t = 0.16
+			kick(1.0 if arg > 0.0 else 0.45)
+			dust_land.amount = 16 if arg > 0.0 else 8
+			dust_land.restart()
+		"lane":
+			lane_t = 0.24
+			lane_dir = arg
+			kick(0.35)
+		"slide":
+			kick(0.7)
+		"stumble":
+			stumble_t = 0.55
+			kick(1.0)
+		"crash":
+			crash_t = 0.0
+			kick(1.3)
+		"cheer":
+			cheer_t = 1.1
 
 
 ## Same skeleton for every character type; only proportions and colours differ,
@@ -121,15 +237,46 @@ func set_glow(on: bool) -> void:
 # Left arm/leg swing outward with -Z, right with +Z.
 
 static func p_idle(t: float) -> Dictionary:
-	return {"y": 0.01 * sin(t * 2.0), "head": 0.05 * sin(t * 0.7), "arm_lz": -0.12, "arm_rz": 0.12, "fore_l": 0.15, "fore_r": 0.15}
+	var b := sin(t * 1.8)                                    # breathing
+	var hop := fmod(t, 4.5)                                  # now and then a little "ready" bounce
+	var bounce := 0.07 * sin(PI * hop / 0.45) if hop < 0.45 else 0.0
+	return {"y": 0.015 * b + bounce, "spine": -0.03 + 0.04 * b, "head": 0.05 + 0.04 * sin(t * 0.9),
+		"head_y": 0.45 * clampf(sin(t * 0.5) * 2.0, -1.0, 1.0), "rz": 0.04 * sin(t * 0.6),
+		"thigh_lz": -0.06, "thigh_rz": 0.06, "shin_l": -0.08, "shin_r": -0.08,
+		"arm_lz": -0.2 - 0.05 * b - 1.5 * bounce, "arm_rz": 0.2 + 0.05 * b + 1.5 * bounce, "fore_l": 0.3, "fore_r": 0.3}
 
 
-static func p_run(p: float) -> Dictionary:
+static func p_run(p: float, lean: float) -> Dictionary:
 	var s := sin(p)
-	return {"y": 0.05 * absf(cos(p)) - 0.03, "spine": -0.25, "head": 0.18,
-		"thigh_lx": 0.9 * s, "thigh_rx": -0.9 * s,
-		"shin_l": -0.2 - 1.3 * maxf(0.0, -sin(p + 0.5)), "shin_r": -0.2 - 1.3 * maxf(0.0, sin(p + 0.5)),
-		"arm_lx": -0.85 * s, "arm_rx": 0.85 * s, "fore_l": 1.4, "fore_r": 1.4, "arm_lz": -0.1, "arm_rz": 0.1}
+	return {"y": 0.09 * absf(cos(p)) - 0.05, "spine": -0.25 - lean, "head": 0.2 + lean * 0.6 + 0.05 * cos(2.0 * p),
+		"ry": 0.16 * s, "spine_y": -0.3 * s, "rz": 0.05 * s,          # hips twist, shoulders counter-twist, hip sway
+		"thigh_lx": 1.0 * s, "thigh_rx": -1.0 * s,
+		"shin_l": -0.25 - 1.5 * maxf(0.0, -sin(p + 0.5)), "shin_r": -0.25 - 1.5 * maxf(0.0, sin(p + 0.5)),
+		"arm_lx": -1.0 * s, "arm_rx": 1.0 * s, "fore_l": 1.45 + 0.25 * s, "fore_r": 1.45 - 0.25 * s, "arm_lz": -0.12, "arm_rz": 0.12}
+
+
+## Push-off: legs extend, arms thrown up.
+static func p_takeoff() -> Dictionary:
+	return {"y": 0.05, "spine": 0.1, "head": -0.1, "thigh_lx": -0.35, "thigh_rx": 0.6, "shin_l": -0.1, "shin_r": -1.0,
+		"arm_lx": 2.7, "arm_rx": 2.2, "arm_lz": -0.3, "arm_rz": 0.3, "fore_l": 0.2, "fore_r": 0.2}
+
+
+## Stumble (upper body, over the running legs): pitched forward, arms windmilling.
+static func p_stumble(t: float) -> Dictionary:
+	return {"rx": -0.3, "spine": -0.65, "head": 0.55, "head_y": 0.3 * sin(t * 18.0),
+		"arm_lx": 1.6 + 1.3 * sin(t * 22.0), "arm_rx": 1.6 - 1.3 * sin(t * 22.0), "arm_lz": -0.9, "arm_rz": 0.9, "fore_l": 0.3, "fore_r": 0.3}
+
+
+## Crash impact: thrown back, arms and legs flung forward (before the flop).
+static func p_impact() -> Dictionary:
+	return {"y": 0.1, "rx": 0.55, "spine": 0.4, "head": 0.7, "arm_lx": 2.0, "arm_rx": 2.5, "arm_lz": -1.2, "arm_rz": 1.2,
+		"thigh_lx": 1.0, "thigh_rx": 0.6, "shin_l": -0.3, "shin_r": -0.6, "fore_l": 0.1, "fore_r": 0.1}
+
+
+## Cheer (upper body): both fists pumping in the air.
+static func p_cheer(t: float) -> Dictionary:
+	var pump := 0.35 * sin(t * 16.0)
+	return {"arm_lx": 2.9 + pump, "arm_rx": 2.9 - pump, "arm_lz": -0.35, "arm_rz": 0.35, "fore_l": 0.5 - pump, "fore_r": 0.5 + pump, "head": -0.25}
 
 
 static func p_air(v: float) -> Dictionary:
@@ -177,44 +324,86 @@ static func p_hit() -> Dictionary:
 ## state: menu | run | hit | over. s: the player's movement state (see main.gd).
 func update_pose(dt: float, state: String, s: Dictionary) -> void:
 	var t := Time.get_ticks_msec() / 1000.0
-	if state == "run" and s["grounded"] and s["slide"] <= 0.0:
+	var grounded: bool = s["grounded"]
+	if state == "run" and grounded and s["slide"] <= 0.0:
 		run_phase += dt * (4.0 + s["speed"] * 0.42)
 	land_t = maxf(0.0, land_t - dt)
+	takeoff_t = maxf(0.0, takeoff_t - dt)
+	lane_t = maxf(0.0, lane_t - dt)
+	stumble_t = maxf(0.0, stumble_t - dt)
+	cheer_t = maxf(0.0, cheer_t - dt)
+	if crash_t >= 0.0:
+		crash_t += dt
 	var target: Dictionary
 	if state == "menu":
 		target = p_idle(t)
 	elif state == "hit" or state == "over":
-		target = p_hit()
+		target = p_impact() if crash_t >= 0.0 and crash_t < 0.12 else p_hit()
 	elif s.get("hop", -1.0) >= 0.0:
 		target = p_tuck()
 	elif s.get("orbit", false):
 		target = p_orbit(t)
-	elif s["grounded"]:
+	elif grounded:
 		if s["slide"] > 0.0:
 			target = p_slide()
 		else:
-			target = p_run(run_phase)
+			target = p_run(run_phase, clampf((s["speed"] - 12.0) / 40.0, 0.0, 0.2))
 			if land_t > 0.0:   # landing crouch layered over the run
-				var w := land_t / 0.16
-				var l := p_land()
-				for k in KEYS:
-					target[k] = target.get(k, 0.0) * (1.0 - w) + l.get(k, 0.0) * w
+				_blend(target, p_land(), land_t / 0.16)
+	elif takeoff_t > 0.0:
+		target = p_takeoff()
 	elif s["vy"] < -20.0:
 		target = p_slam()
 	elif s["floating"]:
 		target = p_float(t)
 	else:
 		target = p_air(s["vy"])
-	var a := 1.0 - exp(-dt * (10.0 if state == "hit" else 18.0))
-	for k in KEYS:
-		pose[k] += (target.get(k, 0.0) - pose[k]) * a
+	if state == "run":
+		if stumble_t > 0.0:
+			_blend(target, p_stumble(t), minf(1.0, stumble_t / 0.15))
+		if cheer_t > 0.0:
+			_blend(target, p_cheer(t), minf(1.0, cheer_t / 0.2))
+		if lane_t > 0.0:   # lane switch: a little hop, lean in, shoulders turn, outer arm flies out
+			var u := 1.0 - lane_t / 0.24
+			var bump := sin(PI * u)
+			if grounded and s["slide"] <= 0.0:
+				target["y"] = target.get("y", 0.0) + 0.16 * bump
+			target["rz"] = target.get("rz", 0.0) - lane_dir * 0.25 * bump
+			target["spine_y"] = target.get("spine_y", 0.0) - lane_dir * 0.35 * bump
+			if lane_dir > 0.0:
+				target["arm_lz"] = target.get("arm_lz", 0.0) - 0.9 * bump
+			else:
+				target["arm_rz"] = target.get("arm_rz", 0.0) + 0.9 * bump
+	# Springs: snappy, with a little overshoot; floppier when crashed.
+	var floppy := state == "hit" or state == "over"
+	var steps := 2
+	var h := dt / steps
+	for _i in steps:
+		for k in KEYS:
+			var kk: float = (BASE_K * 0.45 if floppy else BASE_K) * SOFT.get(k, 1.0)
+			var d := 2.0 * (0.3 if floppy else ZETA) * sqrt(kk)
+			vel[k] += ((target.get(k, 0.0) - pose[k]) * kk - vel[k] * d) * h
+			pose[k] += vel[k] * h
+		sq_v += (-sq * 300.0 - sq_v * 2.0 * 0.28 * sqrt(300.0)) * h
+		sq += sq_v * h
+	# Squash and stretch (volume kept), plus a small squash at each footfall.
+	var step_sq := 0.06 * pow(absf(sin(run_phase)), 8.0) if state == "run" and grounded and s["slide"] <= 0.0 else 0.0
+	var q := clampf(sq + step_sq, -0.3, 0.45)
+	scale = Vector3(1.0 / sqrt(1.0 - q), 1.0 - q, 1.0 / sqrt(1.0 - q))
+	dust_slide.emitting = state == "run" and grounded and s["slide"] > 0.0
 	pivot.position.y = hip_y + pose["y"]
 	var lean: float = s["lean"] * 0.12
 	var twist: float = s["twist"] * 0.35
 	var flip: float = -s.get("hop", -1.0) * TAU if s.get("hop", -1.0) >= 0.0 else 0.0   # forward somersault on a planet hop
+	if flip_t >= 0.0:      # air jump: a quick front flip
+		flip_t += dt / 0.45
+		if flip_t >= 1.0 or grounded:
+			flip_t = -1.0
+		else:
+			flip -= TAU * (1.0 - pow(1.0 - flip_t, 2.0))
 	pivot.rotation = Vector3(pose["rx"] + flip, pose["ry"] + twist, pose["rz"] + lean)
-	j["spine"].rotation.x = pose["spine"]
-	j["head"].rotation.x = pose["head"]
+	j["spine"].rotation = Vector3(pose["spine"], pose["spine_y"], 0)
+	j["head"].rotation = Vector3(pose["head"], pose["head_y"], 0)
 	j["arm_l"].rotation = Vector3(pose["arm_lx"], 0, pose["arm_lz"])
 	j["arm_r"].rotation = Vector3(pose["arm_rx"], 0, pose["arm_rz"])
 	j["fore_l"].rotation.x = pose["fore_l"]
@@ -223,3 +412,9 @@ func update_pose(dt: float, state: String, s: Dictionary) -> void:
 	j["thigh_r"].rotation = Vector3(pose["thigh_rx"], 0, pose["thigh_rz"])
 	j["shin_l"].rotation.x = pose["shin_l"]
 	j["shin_r"].rotation.x = pose["shin_r"]
+
+
+## Mixes the keys of b into a with weight w (keys missing in b count as 0).
+static func _blend(a: Dictionary, b: Dictionary, w: float) -> void:
+	for k in b:
+		a[k] = a.get(k, 0.0) * (1.0 - w) + b[k] * w

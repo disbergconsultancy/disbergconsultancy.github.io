@@ -117,7 +117,15 @@ func _ready() -> void:
 	reset()
 	hud.show_menu(best)
 	var args := OS.get_cmdline_user_args()
-	if "--autotest" in args:
+	if "--reel" in args:
+		# Animation reel: --reel <dir> [close|game] [idle] [char=X] -> PNG frames at 30 fps
+		var i := args.find("--reel")
+		_test = {"phase": "reel", "dir": args[i + 1], "cam": "game" if "game" in args else "close", "idle": "idle" in args}
+		for a in args:
+			if a.begins_with("char="):
+				Config.character = a.substr(5)
+				character.build(Config.char_def())
+	elif "--autotest" in args:
 		_test = {"phase": "god", "kinds": {}, "frames": 0}
 	elif "--shot" in args:
 		# Screenshot: --shot <file.png> <seconds into an invincible run> [menu]
@@ -239,6 +247,7 @@ func reset() -> void:
 	shake = 0.0
 	character.set_dead(false)
 	character.set_glow(false)
+	character.reset_anim()
 	for k in pw:
 		pw[k] = 0.0
 	st = Progress.stats()
@@ -320,8 +329,7 @@ func crash(it: Item = null) -> void:
 		meter = meter * 0.5 if lv >= 2 else 0.0
 		speed *= 0.88 if lv >= 2 else 0.8
 		pw["invuln"] = 0.8
-		squash = 1.0
-		character.land_t = 0.16
+		character.event("stumble")
 		shake = 0.45
 		hud.flash("STUMBLE!" + ("\n1 left" if stumbles_left > 0 else ""))
 		sfx.play("smash")
@@ -333,6 +341,7 @@ func crash(it: Item = null) -> void:
 	hit_t = Config.HIT_PAUSE
 	shake = 0.5
 	character.set_dead(true)
+	character.event("crash")
 	Input.vibrate_handheld(80)
 
 
@@ -429,6 +438,7 @@ func _on_action(dir: String) -> void:
 				return               # Ice lane: no switching while on the ice
 			var nl := clampi(lane + (-1 if dir == "left" else 1), -1, 1)
 			if nl != lane:
+				character.event("lane", nl - lane)
 				lane = nl
 				if not grounded and pw["orbit"] <= 0.0:
 					dash_t = 0.18   # air dash: faster lane switch in the air
@@ -448,6 +458,8 @@ func _on_action(dir: String) -> void:
 		"down":
 			if pw["orbit"] > 0.0:
 				return
+			if grounded and slide_t <= 0.0:
+				character.event("slide")
 			slide_t = Config.SLIDE_TIME
 			if not grounded:
 				vy = Config.SLAM_V * st["slam_mul"]
@@ -464,12 +476,12 @@ func _on_ice() -> bool:
 
 
 func _jump() -> void:
+	character.event("jump" if grounded else "jump2")
 	slide_t = 0.0
 	vy = st["jump_v"]
 	sfx.play("jump")
 	jump_buffer_t = 0.0
 	grounded = false
-	squash = -1.0
 	float_t = 0.0
 
 
@@ -523,7 +535,7 @@ func use_ability() -> void:
 		vy = Config.SUPER_JUMP_V
 		grounded = false
 		float_t = 0.0
-		squash = -1.0
+		character.event("jump")
 		jump_buffer_t = 0.0
 		super_active = true
 		hang_used = 0.0
@@ -738,14 +750,12 @@ func _move_player(dt: float) -> void:
 			py = ground_y
 			vy = 0.0
 			grounded = true
-			if hard:
-				squash = 1.0
+			character.event("land", 1.0 if hard else 0.0)
 			air_jumps = 0
 			if super_active:
 				super_active = false
 				if st["meteor"]:
 					_blast(-1.0, 9.0, "METEOR!")   # landing from a super jump smashes what is just ahead
-			character.land_t = 0.16
 			if jump_buffer_t > 0.0:
 				_jump()
 	else:
@@ -863,13 +873,13 @@ func _collide() -> void:
 
 func _render(dt: float) -> void:
 	var h := _player_height()
-	squash *= pow(0.001, dt)
-	var sq := 1.0 - 0.25 * squash if squash > 0.0 else 1.0 + 0.2 * -squash
+	if squash != 0.0:          # squash (+) or stretch (-) requested this frame
+		character.kick(squash)
+		squash = 0.0
 	character.position = Vector3(px, planet.radius + py, 0.0)
 	character.set_glow(state == "run" and ability_t > 0.0)
 	# Blink while invulnerable after a shield hit or orbit.
 	character.visible = not (pw["invuln"] > 0.0 and pw["invuln"] < 1.4 and int(Time.get_ticks_msec() / 80) % 2 == 0)
-	character.scale = Vector3(1.0 / sqrt(sq), sq, 1.0 / sqrt(sq))
 	character.update_pose(dt, state, {
 		"grounded": grounded, "slide": slide_t, "vy": vy, "speed": speed,
 		"hop": 1.0 - hop_t / Config.HOP_TIME if hop_t > 0.0 else -1.0, "orbit": pw["orbit"] > 0.0,
@@ -1257,8 +1267,63 @@ func _autotest_phase2(dt: float) -> void:
 # Headless self-test: simulates runs at a fixed time step and prints a report.
 # =====================================================================
 
+## Plays a scripted sequence of moves on an empty track and saves every other frame.
+func _reel(dt: float) -> void:
+	var seq := {0.5: "up", 1.5: "left", 2.2: "right", 3.0: "down", 4.2: "up", 4.55: "up2", 5.6: "stumble",
+		6.6: "cheer", 7.8: "crash"}
+	var total := 9.0
+	if _test["idle"]:
+		seq = {}
+		total = 5.0
+	else:
+		god = true
+		start_run()
+		speed = 16.0
+	hud.visible = _test["cam"] == "game"
+	var n := int(total * 60.0)
+	var done := {}
+	for f in n:
+		var t := f / 60.0
+		for k in seq:
+			if t >= k and not done.has(k):
+				done[k] = true
+				match seq[k]:
+					"up", "left", "right", "down":
+						_on_action(seq[k])
+					"up2":
+						_jump()             # air jump (front flip)
+					"stumble":
+						character.event("stumble")
+					"cheer":
+						character.event("cheer")
+					"crash":
+						god = false
+						pw["invuln"] = 0.0
+						crash()
+		if state == "run":
+			for it in planet.items:       # empty track: only the moves
+				if it.alive:
+					planet.hide_item(it)
+			speed = 16.0
+		step(dt)
+		_render(dt)
+		if _test["cam"] == "close":    # side view, close to the runner
+			var r := planet.radius
+			camera.position = Vector3(px + 3.0, r + 1.2 + py * 0.8, -0.9)
+			camera.look_at(Vector3(px, r + 0.8 + py * 0.8, 0.1), Vector3.UP)
+		if f % 2 == 0:
+			await RenderingServer.frame_post_draw
+			get_viewport().get_texture().get_image().save_png("%s/%04d.png" % [_test["dir"], f / 2])
+
+
 func _autotest_tick() -> void:
 	var dt := 1.0 / 60.0
+	if _test["phase"] == "reel":
+		if not _test.has("running"):
+			_test["running"] = true
+			await _reel(dt)
+			get_tree().quit()
+		return
 	if _test["phase"] == "shot":
 		if _test["done"]:
 			return

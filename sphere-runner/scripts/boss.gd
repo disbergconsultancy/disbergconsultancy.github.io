@@ -131,6 +131,7 @@ func _defeat() -> void:
 	game.hud.pop("+%d" % bonus)
 	game.sfx.play("ready")
 	_flash_t = 0.5
+	game.character.event("cheer")
 	for it in game.planet.items:
 		if it.boss:
 			game.planet.hide_item(it)
