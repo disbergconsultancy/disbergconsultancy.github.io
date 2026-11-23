@@ -38,6 +38,10 @@
   .charpick button { flex: 1; border: 2px solid transparent; border-radius: 10px; padding: 8px 4px; color: #fff; font-weight: 800; font-size: 14px; }
   .charpick button.on { border-color: #fff; }
   #charDesc { font-size: 12.5px !important; min-height: 52px; }
+  #stats table { width: 100%; font-size: 13px; border-collapse: collapse; margin-top: 6px; }
+  #stats td, #stats th { padding: 4px 2px; text-align: right; border-bottom: 1px solid rgba(255,255,255,.1); }
+  #stats td:first-child, #stats th:first-child { text-align: left; }
+  #stats th { font-weight: 600; opacity: .7; }
   #pauseBtn { position: fixed; right: calc(env(safe-area-inset-right) + 14px); bottom: calc(env(safe-area-inset-bottom) + 14px);
     width: 44px; height: 44px; border-radius: 22px; border: 0; background: rgba(0,0,0,.3); color: #fff; font-size: 18px; font-weight: 800; }
   .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -108,6 +112,10 @@
     <div class="opt"><div>Show hitbox<small>The box collisions actually use</small></div><input type="checkbox" id="optHitbox"></div>
     <button class="go" id="playBtn">Play</button>
     <p id="bestLine" style="text-align:center;margin-top:10px"></p>
+    <details style="margin-top:6px"><summary style="font-size:14px;font-weight:700;cursor:pointer">Balance stats (last 10 runs, this difficulty)</summary>
+      <div id="stats"></div>
+      <button class="go" id="resetStats" style="background:rgba(255,255,255,.12);font-size:14px;padding:8px">Reset stats</button>
+    </details>
   </div>
 </div>
 
@@ -161,15 +169,15 @@ const HOP_TIME = 2.6, HOP_H = 14, HOP_EVERY_LAPS = 2;
 const WAVE_M = { easy: 220, medium: 260, hard: 300 }, CALM_M = 70;
 // Three play styles: same hitbox, different trait, ability and trade-off.
 const CHARS = {
-  runner: { name: 'Runner', desc: 'All-rounder. Quick lane switches, longer combo window. Ability: <b>Focus</b>, time slows down for 3 s.',
-    laneMul: 1.2, jumpV: 14, floatTime: 0.45, comboTime: 3.5, ability: 'focus', abilityTime: 3, label: 'FOCUS',
+  runner: { name: 'Runner', desc: 'Baseline. Strength: longer combo window. Ability: <b>Focus</b>, time slows down for 3 s.',
+    laneMul: 1.0, jumpV: 14, floatTime: 0.45, comboTime: 3.5, ability: 'focus', abilityTime: 3, label: 'FOCUS',
     colors: { body: 0x3380ff, limb: 0x2559c4, accent: 0xf0f0f5, visor: 0x29d4ff },
     shape: { torsoW: 1, shoulder: 1, armT: 1, hand: 1, legLen: 1, legT: 1, head: 1 } },
-  smasher: { name: 'Smasher', desc: 'Heavy. Slower lane switches and a lower jump. Ability: <b>Smash</b>, crash through blocks for 3 s.',
-    laneMul: 0.8, jumpV: 12.5, floatTime: 0.3, comboTime: 2.5, ability: 'smash', abilityTime: 3, label: 'SMASH', heavy: true,
+  smasher: { name: 'Smasher', desc: 'Heavy. Strength: meter fills 40% faster. Weakness: lower jump. Ability: <b>Smash</b> through blocks for 3 s; each block smashed adds 0.4 s, up to 5 s.',
+    laneMul: 1.0, meterMul: 1.4, smashExtend: 0.4, abilityMax: 5, jumpV: 12.5, floatTime: 0.3, comboTime: 2.5, ability: 'smash', abilityTime: 3, label: 'SMASH', heavy: true,
     colors: { body: 0x3a4658, limb: 0x2a3342, accent: 0xffb020, visor: 0xffb020 },
     shape: { torsoW: 1.3, shoulder: 1.25, armT: 1.45, hand: 1.7, legLen: 0.88, legT: 1.35, head: 0.95 } },
-  jumper: { name: 'Jumper', desc: 'Light. Jumps higher (about 3 m) and floats longer, but spends more time in the air. Ability: <b>Super jump</b>, a huge leap over anything.',
+  jumper: { name: 'Jumper', desc: 'Light. Strength: jumps higher (about 3 m) and floats longer. Weakness: more time in the air, so it reacts later. Ability: <b>Super jump</b>, a huge leap over anything.',
     laneMul: 1.0, jumpV: 16.5, floatTime: 0.8, comboTime: 2.5, ability: 'super', abilityTime: 0, label: 'SUPER JUMP',
     colors: { body: 0x22b357, limb: 0x15803d, accent: 0xeafff0, visor: 0xb6ff3d },
     shape: { torsoW: 0.85, shoulder: 0.9, armT: 0.85, hand: 1, legLen: 1.18, legT: 0.85, head: 1 } },
@@ -996,7 +1004,7 @@ let lane = 0, px = 0, py = 0, vy = 0, slideT = 0, jumpBufferT = 0, grounded = tr
 let coins = 0, lap = 0, hitT = 0, shake = 0, squash = 0, pts = 0, closeCalls = 0;
 let flashT = 0, popT = 0;
 let combo = 0, comboT = 0, comboLevel = 1, floatT = 0, holding = false, dashT = 0;
-let meter = 0, abilityT = 0, lastTap = 0;
+let meter = 0, abilityT = 0, abilityTotal = 0, lastTap = 0;
 let waveLeft = 0, calmLeft = 0, nextPadLap = HOP_EVERY_LAPS, hopT = 0, hopSwapped = false, themeIdx = 0;
 const pw = { magnet: 0, shield: 0, orbit: 0, x2: 0, invuln: 0 };
 
@@ -1024,7 +1032,7 @@ const mult = () => (pw.x2 > 0 ? 2 : 1);
 const comboMult = () => 1 + Math.min(4, Math.floor(combo / 10));
 function addCombo(n) {
   const was = meter;
-  meter = Math.min(1, meter + (n >= 3 ? METER_PER_CLOSE : METER_PER_COIN * n));
+  meter = Math.min(1, meter + (n >= 3 ? METER_PER_CLOSE : METER_PER_COIN * n) * (CH_DEF().meterMul || 1));
   if (was < 1 && meter >= 1) { pop(CH_DEF().label + ' READY'); sfx.ready(); }
   combo += n; comboT = CH_DEF().comboTime;
   const lv = comboMult();
@@ -1054,6 +1062,9 @@ function gameOver() {
   const s = score(), key = 'best_' + modeKey();
   const best = store.get(key, 0), isBest = s > best;
   if (isBest) store.set(key, s);
+  const runs = store.get('runs_' + opts.char + '_' + opts.diff, []);
+  runs.push({ d: Math.floor(dist), s });
+  store.set('runs_' + opts.char + '_' + opts.diff, runs.slice(-10));
   $('overStats').innerHTML = `Score <b>${s}</b>${isBest ? ' &nbsp;NEW BEST!' : ''}<br>Best ${Math.max(s, best)}<br>` +
     `Laps ${lap} &nbsp;·&nbsp; Coins ${coins}<br>Distance ${Math.floor(dist)} m &nbsp;·&nbsp; Close calls ${closeCalls}`;
   show('over');
@@ -1237,7 +1248,7 @@ function useAbility() {
   if (d.ability === 'super') {
     slideT = 0; vy = SUPER_JUMP_V; grounded = false; floatT = 0; squash = -1; jumpBufferT = 0;
     abilityT = 1.6;                    // just for the visual trail
-  } else abilityT = d.abilityTime;
+  } else { abilityT = d.abilityTime; abilityTotal = d.abilityTime; }
 }
 const SMASHABLE = new Set(['LOW', 'HIGH', 'WALL', 'MOVER']);
 function smashItem(it, score = true) {
@@ -1245,7 +1256,13 @@ function smashItem(it, score = true) {
   burst(it, KIND[it.kind].color);
   shake = Math.max(shake, 0.25);
   sfx.smash();
-  if (score) { const b = SMASH_POINTS * mult() * comboMult(); pts += b; addCombo(2); pop('SMASH +' + b); }
+  if (score) {
+    const b = SMASH_POINTS * mult() * comboMult(); pts += b; addCombo(2);
+    // Each smash extends Smash a little, but one activation never lasts longer than abilityMax.
+    const d = CH_DEF(), add = Math.max(0, Math.min(d.smashExtend || 0, (d.abilityMax || 0) - abilityTotal));
+    abilityT += add; abilityTotal += add;
+    pop('SMASH +' + b + (add > 0 ? `  +${add.toFixed(1)}s` : ''));
+  }
 }
 // Debris: small cubes thrown up and back, in world space.
 const particles = [];
@@ -1402,7 +1419,7 @@ function updateHud() {
   if (pw.shield > 0) list.push(`<span style="color:#3dff6e">SHIELD</span>`);
   $('powers').innerHTML = list.join('<br>');
   const d = CH_DEF();
-  $('meterFill').style.width = (abilityT > 0 && d.abilityTime ? abilityT / d.abilityTime : meter) * 100 + '%';
+  $('meterFill').style.width = Math.min(1, abilityT > 0 && d.abilityTime ? abilityT / (d.abilityMax || d.abilityTime) : meter) * 100 + '%';
   $('meterFill').style.background = d.colors.visor;
   $('meterLabel').textContent = abilityT > 0 && d.abilityTime ? d.label : meter >= 1 ? 'DOUBLE-TAP: ' + d.label : d.label;
   $('meter').classList.toggle('ready', meter >= 1 && abilityT <= 0);
@@ -1527,6 +1544,14 @@ function bindSeg(id, key) {
 }
 function refreshMenu() {
   $('bestLine').textContent = `Best with these settings: ${store.get('best_' + modeKey(), 0)}`;
+  // Balance check: average of the last 10 runs per character at this difficulty.
+  const rows = Object.entries(CHARS).map(([k, c]) => {
+    const runs = store.get('runs_' + k + '_' + opts.diff, []);
+    if (!runs.length) return `<tr><td>${c.name}</td><td colspan="3" style="opacity:.5">no runs yet</td></tr>`;
+    const avg = (f) => Math.round(runs.reduce((a, r) => a + r[f], 0) / runs.length);
+    return `<tr><td>${c.name}</td><td>${runs.length}</td><td>${avg('d')} m</td><td>${avg('s')}</td></tr>`;
+  }).join('');
+  $('stats').innerHTML = `<table><tr><th></th><th>runs</th><th>avg distance</th><th>avg score</th></tr>${rows}</table>`;
   if (state === 'menu') reset();   // preview the chosen globe behind the menu
 }
 bindCheck('optShrink', 'shrink');
@@ -1560,6 +1585,7 @@ function togglePause() {
   else if (state === 'paused') { state = 'run'; show(null); last = performance.now(); }
 }
 $('playBtn').addEventListener('click', startRun);
+$('resetStats').addEventListener('click', () => { for (const k of Object.keys(CHARS)) for (const d of Object.keys(DIFF)) store.set('runs_' + k + '_' + d, []); refreshMenu(); });
 $('againBtn').addEventListener('click', startRun);
 $('menuBtn').addEventListener('click', () => { state = 'menu'; show('menu'); refreshMenu(); });
 $('quitBtn').addEventListener('click', () => { state = 'menu'; show('menu'); $('pauseBtn').classList.add('hidden'); refreshMenu(); });
@@ -1575,7 +1601,7 @@ reset();
 idle();
 requestAnimationFrame(frame);
 window.__game = { get state() { return state; }, get score() { return score(); }, action, startRun,
-  get items() { return items.length; }, get py() { return py; }, get pw() { return pw; }, get kinds() { return items.map(i => i.kind); }, get near() { return items.filter(i => i.alive).map(i => ({ k: i.kind, x: i.x, d: aheadM(i), hd: i.hd })); }, get grounded() { return grounded; }, useAbility, set meter(v) { meter = v; }, get abilityT() { return abilityT; }, set hold(v) { holding = v; }, get pose() { return { ...curPose }; }, get combo() { return combo; }, get theme() { return theme.name; }, get hopT() { return hopT; }, startHop, activate, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
+  get items() { return items.length; }, get py() { return py; }, get pw() { return pw; }, get kinds() { return items.map(i => i.kind); }, get near() { return items.filter(i => i.alive).map(i => ({ k: i.kind, x: i.x, d: aheadM(i), hd: i.hd })); }, get grounded() { return grounded; }, useAbility, set meter(v) { meter = v; }, get abilityT() { return abilityT; }, get abilityTotal() { return abilityTotal; }, set hold(v) { holding = v; }, get pose() { return { ...curPose }; }, get combo() { return combo; }, get theme() { return theme.name; }, get hopT() { return hopT; }, startHop, activate, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
 </script>
 <script>
 window.addEventListener('error', e => { const el = document.getElementById('err'); el.style.display = 'block'; el.textContent = 'Error: ' + e.message; });
