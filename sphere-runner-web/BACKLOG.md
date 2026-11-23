@@ -18,4 +18,4 @@ Separate from the per-character skill trees (which stay about play style).
 - First-run-of-the-day bonus (e.g. double XP on the first 3 runs each day).
 
 ## Boss fights
-See the boss concept discussion: at the end of each world, loop around a big boss before the planet hop.
+Built as a chase on the planet (boss on the horizon throws things; pass it to win). Later: let a boss appear earlier in a world to set the stage, boss-specific signature throws, real boss models.

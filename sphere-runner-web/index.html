@@ -63,11 +63,11 @@
   .go.small { font-size: 13px; padding: 9px 4px; background: rgba(255,255,255,.12); }
   #skLearn:disabled { opacity: .35; }
   .charpick small { display: block; font-size: 11px; font-weight: 600; opacity: .9; }
-  #bossbar { position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 64px); display: none;
+  #bossbar { position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 128px); display: none;
     text-align: center; font-weight: 900; font-size: 15px; letter-spacing: 1px; pointer-events: none; text-shadow: 0 2px 4px rgba(0,0,0,.7); }
-  #bossbar .segs { display: flex; gap: 4px; justify-content: center; margin-top: 4px; }
-  #bossbar .segs i { width: 34px; height: 10px; border-radius: 3px; background: rgba(0,0,0,.4); display: block; }
-  #bossbar .segs i.on { background: #ff3a3a; box-shadow: 0 0 6px #ff3a3a; }
+  #bossbar .track { width: 170px; height: 10px; border-radius: 5px; background: rgba(0,0,0,.4); margin: 4px auto 0; overflow: hidden; }
+  #bossbar .track div { height: 100%; background: #ff3a3a; box-shadow: 0 0 6px #ff3a3a; }
+  #bossbar .sub { font-size: 11px; font-weight: 700; letter-spacing: 0; opacity: .9; margin-top: 2px; }
   #pauseBtn { position: fixed; right: calc(env(safe-area-inset-right) + 14px); bottom: calc(env(safe-area-inset-bottom) + 14px);
     width: 44px; height: 44px; border-radius: 22px; border: 0; background: rgba(0,0,0,.3); color: #fff; font-size: 18px; font-weight: 800; }
   .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -122,7 +122,7 @@
       <div class="sw" style="background:#5a6b8c"></div><div>Long block: take the ramp and run on top</div>
       <div class="sw" style="background:#ffd91a"></div><div>Coin · close call = bonus</div>
       <div class="sw" style="background:linear-gradient(90deg,#00e5ff 25%,#3dff6e 25% 50%,#fff 50% 75%,#ff4fa3 75%)"></div><div>Power-ups: magnet · shield · orbit · x2</div>
-      <div class="sw" style="background:#7df9ff"></div><div>Boss gate (end of each world): loop around the boss to beat it, then hop to the next planet</div>
+      <div class="sw" style="background:#7df9ff"></div><div>Boss (end of each world): it waits on the horizon and throws things at you. Catch up and run past it to beat it.</div>
     </div>
     <p style="font-size:13px">Keep coins and close calls coming for a <b>combo</b>. Hold your finger after a jump to <b>float</b>. Switch lanes in the air for a quick <b>air dash</b>.</p>
     </details>
@@ -395,226 +395,186 @@ function box(w, h, d, color, opacity = 1) {
 // Anything on the globe is placed by (phi = globe-local angle, x = lane offset, y = height).
 // =====================================================================
 // =====================================================================
-// Boss arena: at the end of every world you loop around a giant boss.
-// The track becomes a flat ring around the boss with the same lanes, moves
-// and collision rules. Each completed loop damages the boss; a hit ends the run.
-// Attacks keep the colour code: red = switch lane, orange = jump, purple = slide.
+// Boss chase: at the end of every world a giant block waits on the horizon.
+// It appears at the start of the final lap (setting the stage). When the laps
+// are done the chase starts: it backs away while throwing things at you and you
+// slowly close the gap. Run past it to defeat it. A hit ends the run, as always.
+// The chase is as long as `bossLoops` loops of the old 22 m boss ring.
+// Thrown attacks keep the colour code: red = switch lane, orange = jump, purple = slide.
 // =====================================================================
-const ARENA_R = 22;
-const AY = new THREE.Vector3(0, 1, 0);
-let mode = 'planet';                 // 'planet' | 'arena'
-let arena = null, bossObj = null;
-let worldStart = 0, worldLap = 0, gatePhi = 0, gatePlaced = false, hopTarget = 'planet';
-let arenaStart = 0, bossLoops = 0, bossHp = 0, nextAttack = 0, stompT = 0, bossState = 'none', bossEndT = 0, bossKills = 0;
-const shock = { active: false, r: 0, mesh: null };
-const worldGroup = () => (mode === 'arena' ? arena : planet);
-
-function buildArena(th) {
-  arena = new THREE.Group();
-  arena.position.set(-R, R, 0);
-  scene.add(arena);
-  const ground = new THREE.Mesh(new THREE.CylinderGeometry(R + 70, R + 70, 1, 64), flat(th.ground[1]));
-  ground.position.y = -0.55; ground.receiveShadow = true; arena.add(ground);
-  const plaza = new THREE.Mesh(new THREE.CylinderGeometry(R - TRACK_HALF - 0.6, R - TRACK_HALF - 0.6, 0.3, 64), flat(th.ground[2]));
-  plaza.position.y = -0.1; arena.add(plaza);
-  const ring = (r0, r1, mtl, y) => {
-    const m = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 160, 1), mtl);
-    m.rotation.x = -Math.PI / 2; m.position.y = y; m.receiveShadow = true; arena.add(m); return m;
-  };
-  ring(R - TRACK_HALF, R + TRACK_HALF, flat(th.track), 0.01);
-  const curbMat = flat(th.curb, th.name === 'EMBER' ? 0.8 : 0);
-  ring(R - TRACK_HALF - 0.3, R - TRACK_HALF, curbMat, 0.08);
-  ring(R + TRACK_HALF, R + TRACK_HALF + 0.3, curbMat, 0.08);
-  // Lane dashes and a ring of standing stones give a sense of speed.
-  const n = Math.floor((Math.PI * 2 * R) / 3);
-  for (let i = 0; i < n; i++) for (const side of [-0.5, 0.5]) {
-    const d = new THREE.Mesh(boxGeo, flat(th.dash, th.name === 'EMBER' ? 0.6 : 0));
-    d.scale.set(0.1, 0.03, 1.2);
-    arena.add(d); place(d, (i / n) * Math.PI * 2, side * LANE_W, 0.03);
-  }
-  for (let i = 0; i < 28; i++) {
-    const h = 2 + ((i * 37) % 7);
-    const stoneCols = [th.ground[2], th.curb, th.ground[0]];
-    const st = new THREE.Mesh(boxGeo, flat(stoneCols[i % 3]));
-    st.scale.set(1.6, h, 1.6); st.castShadow = true;
-    arena.add(st); place(st, (i / 28) * Math.PI * 2, TRACK_HALF + 4 + (i % 3) * 2, h / 2);
-  }
-  shock.mesh = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.5, 96, 1, true),
-    new THREE.MeshLambertMaterial({ color: th.boss.wave, emissive: th.boss.wave, emissiveIntensity: 0.9, side: THREE.DoubleSide, transparent: true, opacity: 0.85 }));
-  shock.mesh.position.y = 0.25; shock.mesh.visible = false; shock.active = false;
-  arena.add(shock.mesh);
+const BOSS_SIZE = 14, BOSS_LOOP_M = 2 * Math.PI * 22;
+let bossObj = null, bossPhase = 'none';          // none | intro | fight | down
+let worldStart = 0, worldLap = 0;
+let bossDist = 0, bossDone = 0, attackT = 0, stompT = 0, bossEndT = 0, bossKills = 0;
+const bossX = () => -(TRACK_HALF + 2.5 + BOSS_SIZE / 2);       // beside the track, on the left
+const bossProgress = () => (bossDist ? THREE.MathUtils.clamp(bossDone / bossDist, 0, 1) : 0);
+// Distance ahead of the runner: it stays near the horizon (throwing) for most of the chase,
+// then you close the gap fast in the last ~20% and run past it.
+function bossAhead() {
+  const far = Math.min(0.85 * R, 42);
+  if (bossPhase === 'intro') return far;
+  return (far + BOSS_SIZE) * (1 - Math.pow(bossProgress(), 5)) - BOSS_SIZE;
 }
 
-// The boss: for now a single big block (placeholder, like the runner started as a box),
-// with two glowing eyes so you can see it facing the runner (+X).
-const BOSS_SIZE = 13;
 function buildBoss(th) {
   const b = th.boss, g = new THREE.Group(), mats = [];
   const M = (c, e = 0) => { const m = new THREE.MeshLambertMaterial({ color: c, flatShading: true, emissive: e ? c : 0x000000, emissiveIntensity: e }); m.userData = { e, c: e ? c : 0 }; mats.push(m); return m; };
   const body = new THREE.Group(); g.add(body);           // pivot at the ground: leans and hops happen here
   const cube = new THREE.Mesh(boxGeo, M(b.body, b.glow ? b.glow * 0.3 : 0));
-  cube.scale.setScalar(BOSS_SIZE); cube.position.y = BOSS_SIZE / 2; body.add(cube);
-  for (const sz of [-1, 1]) {
+  cube.scale.setScalar(BOSS_SIZE); cube.position.y = BOSS_SIZE / 2; cube.castShadow = true; body.add(cube);
+  for (const sx of [-1, 1]) {                              // eyes on the face toward the runner (+Z)
     const eye = new THREE.Mesh(boxGeo, M(b.eye, 1));
-    eye.scale.set(0.4, 1.4, 2.2); eye.position.set(BOSS_SIZE / 2 + 0.1, BOSS_SIZE * 0.68, sz * 2.6); body.add(eye);
+    eye.scale.set(2.4, 1.5, 0.4); eye.position.set(sx * 2.9, BOSS_SIZE * 0.68, BOSS_SIZE / 2 + 0.1); body.add(eye);
   }
-  // Stands a little ahead of the ring centre (still clear of the track) so it sits in view, facing the camera.
-  g.position.set(-R + 4, R, -8);
-  g.rotation.y = -0.59;
-  scene.add(g);
+  planet.add(g);
   return { g, body, mats, flashT: 0, windT: -1, windDur: 1 };
 }
-
-function enterArena() {
-  mode = 'arena';
-  planet.visible = false;
-  R = targetR = shrinkFrom = ARENA_R; shrinkT = 1;
-  buildArena(theme);
-  bossObj = buildBoss(theme);
-  arenaStart = angle; bossLoops = 0; bossHp = theme.bossLoops; bossState = 'fight'; stompT = 0;
-  nextAttack = angle + 34 / R;
-  flash(theme.boss.name);
-  sfx.roar();
-  $('bossbar').style.display = 'block';
-  updateBossBar();
-}
-function exitArena() {
-  if (arena) { scene.remove(arena); arena = null; }
-  if (bossObj) { scene.remove(bossObj.g); bossObj = null; }
-  shock.active = false;
-  mode = 'planet'; planet.visible = true; bossState = 'none';
+function removeBoss() {
+  if (bossObj) { planet.remove(bossObj.g); bossObj = null; }
+  bossPhase = 'none';
   $('bossbar').style.display = 'none';
 }
+function startBossIntro() {
+  if (!bossObj) bossObj = buildBoss(theme);
+  bossPhase = 'intro';
+  flash('FINAL LAP\n' + theme.boss.name + ' AHEAD');
+  sfx.roar();
+  updateBossBar();
+}
+function startBossFight() {
+  if (!bossObj) bossObj = buildBoss(theme);
+  bossPhase = 'fight';
+  bossDist = theme.bossLoops * BOSS_LOOP_M; bossDone = 0;
+  attackT = 0.4; stompT = 0;
+  flash('CATCH THE\n' + theme.boss.name);
+  sfx.roar();
+  updateBossBar();
+}
 function updateBossBar() {
-  const max = theme.bossLoops;
-  let segs = '';
-  for (let i = 0; i < max; i++) segs += `<i class="${i < bossHp ? 'on' : ''}"></i>`;
-  $('bossbar').innerHTML = `<div>${theme.boss.name}</div><div class="segs">${segs}</div>`;
+  const el = $('bossbar');
+  if (bossPhase === 'none') { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const left = Math.max(0, Math.ceil(bossDist - bossDone));
+  el.innerHTML = `<div>${theme.boss.name}</div>` + (bossPhase === 'intro' ? '<div class="sub">waiting at the end of this lap</div>' :
+    `<div class="track"><div style="width:${100 * bossProgress()}%"></div></div><div class="sub">${bossPhase === 'down' ? 'DEFEATED' : left + ' m to pass it'}</div>`);
 }
 
-// ---------- Attacks
-function newDrop() { return { t: 0, dur: 0.55, h: 16 }; }
+// ---------- Thrown attacks
 function markLanes(phi, lanes, list) {
   for (const l of lanes) list.push(addItem('MARK', phi, LX(l), { w: LANE_W * 0.9, len: 2.6 }));
 }
-function swingArm(i, dur) { bossObj.windT = 0; bossObj.windDur = dur; }   // wind-up lean; i kept for later arms
+function throwFx() { if (bossObj) { bossObj.windT = 0; bossObj.windDur = 0.9; } }
+const newFly = () => ({ t: 0, dur: 0.9 });
 function attackAt(kind, phi) {
-  const marks = [];
-  if (kind === 'smash') {                     // red fist on one lane: switch lanes
+  const marks = [], extra = (o = {}) => ({ fly: newFly(), marks, boss: true, ...o });
+  if (kind === 'smash') {                     // red boulder on one lane: switch lanes
     const l = pick([-1, 0, 1]);
     markLanes(phi, [l], marks);
-    addItem('FIST', phi, LX(l), { w: 2.0, len: 2.0, extra: { drop: newDrop(), marks } });
-    const free = pick([-1, 0, 1].filter(x => x !== l));
-    if (Math.random() < 0.6) coinLine(phi, free, -3, 3);
-    swingArm(0, 0.85);
+    addItem('FIST', phi, LX(l), { w: 2.0, len: 2.0, extra: extra() });
+    if (Math.random() < 0.6) coinLine(phi, pick([-1, 0, 1].filter(x => x !== l)), -3, 3);
   } else if (kind === 'block') {              // red wall over two lanes: take the open one
     const open = pick([-1, 0, 1]), lanes = [-1, 0, 1].filter(x => x !== open);
     markLanes(phi, lanes, marks);
-    addItem('BLOCK', phi, (LX(lanes[0]) + LX(lanes[1])) / 2, { w: LANE_W * 1.9, len: 1.6, extra: { drop: newDrop(), marks } });
+    addItem('BLOCK', phi, (LX(lanes[0]) + LX(lanes[1])) / 2, { w: LANE_W * 1.9, len: 1.6, extra: extra() });
     coinLine(phi, open, -3, 3);
-    swingArm(1, 0.85);
-  } else {                                    // an arm across the whole track: jump (low) or slide (high)
+  } else {                                    // across the whole track: jump the log, slide under the bar
     const low = kind === 'sweepLow';
     markLanes(phi, [-1, 0, 1], marks);
-    addItem(low ? 'SWEEPLOW' : 'SWEEPHIGH', phi, 0, { w: TRACK_HALF * 2, len: 1.4, extra: { drop: newDrop(), marks } });
+    addItem(low ? 'SWEEPLOW' : 'SWEEPHIGH', phi, 0, { w: TRACK_HALF * 2 - 0.4, len: 1.2, extra: extra() });
     if (low) coinArc(phi, pick([-1, 0, 1]), 0); else coinLine(phi, pick([-1, 0, 1]), -2, 2, 0.1, 1);
-    swingArm(0, 0.85); swingArm(1, 0.85);
   }
+  throwFx();
 }
-function scheduleAttacks() {
-  if (bossState !== 'fight') return;
-  const lvl = bossLoops, last = lvl >= theme.bossLoops - 1;
-  while (nextAttack < angle + 34 / R) {
-    const r = Math.random() * (100 + 8 * lvl);
-    let kind = r < 32 ? 'smash' : r < 54 ? 'block' : r < 68 ? 'sweepLow' : r < 82 ? 'sweepHigh' : 'stomp';
-    if (kind === 'stomp') {
-      if (stompT <= 0 && !shock.active) { stompT = 1.1; sfx.roar(); }
-      else kind = 'smash';
+function scheduleAttacks(dt) {
+  if (bossPhase !== 'fight') return;
+  const ahead = bossAhead();
+  if (stompT > 0) {                            // stomp: crouch, hop, land -> a wave rolls toward you
+    stompT -= dt;
+    if (stompT <= 0 && ahead > 14) {
+      addItem('SHOCK', angle + (ahead - BOSS_SIZE / 2) / R, 0, { w: TRACK_HALF * 2 - 0.4, extra: { vel: 9, boss: true } });
+      shake = Math.max(shake, 0.3); sfx.thud();
     }
-    if (kind !== 'stomp') attackAt(kind, nextAttack);
-    // Later loops: combos (a second attack right behind the first). The last loop is "enraged".
-    if (lvl >= 1 && Math.random() < (last ? 0.45 : 0.25)) attackAt(pick(['smash', 'block']), nextAttack + 9 / R);
-    nextAttack += Math.max(13, speed * (1.15 - 0.08 * lvl - (last ? 0.1 : 0))) / R;
   }
+  attackT -= dt;
+  if (attackT > 0) return;
+  // Land between you and the boss, far enough ahead to react.
+  const target = Math.min(26, ahead - BOSS_SIZE / 2 - 3);
+  const lvl = Math.floor(bossProgress() * theme.bossLoops), last = lvl >= theme.bossLoops - 1;
+  attackT = Math.max(13, speed * (1.15 - 0.07 * lvl - (last ? 0.1 : 0))) / Math.max(speed, 1);
+  if (target < 12) return;                     // too close to throw: you are about to pass it
+  const r = Math.random() * (100 + 8 * lvl);
+  let kind = r < 32 ? 'smash' : r < 54 ? 'block' : r < 68 ? 'sweepLow' : r < 82 ? 'sweepHigh' : 'stomp';
+  if (kind === 'stomp' && (stompT > 0 || ahead < 22)) kind = 'smash';
+  if (kind === 'stomp') { stompT = 0.8; sfx.roar(); return; }
+  attackAt(kind, angle + target / R);
+  // Later in the chase: combos (a second throw right behind the first).
+  if (lvl >= 1 && target > 18 && Math.random() < (last ? 0.45 : 0.25)) attackAt(pick(['smash', 'block']), angle + (target - 8) / R);
 }
 
-function bossHit() {
-  bossHp = Math.max(0, bossHp - 1);
-  bossObj.flashT = 0.35;
-  shake = Math.max(shake, 0.35);
-  sfx.bosshit();
-  const b = Math.round(100 * mult()); pts += b;
+function defeatBoss() {
+  bossPhase = 'down'; bossEndT = 1.6; bossKills++;
+  const bonus = Math.round(500 * mult()); pts += bonus;
+  flash(theme.boss.name + '\nDEFEATED!');
+  pop('+' + bonus);
+  sfx.victory();
+  if (bossObj) bossObj.flashT = 0.5;
+  for (const it of items) if (it.boss) hideItem(it);
   updateBossBar();
-  if (bossHp <= 0) {
-    bossState = 'down'; bossEndT = 1.8; bossKills++;
-    const bonus = Math.round(500 * mult()); pts += bonus;
-    flash(theme.boss.name + '\nDEFEATED!');
-    pop('+' + bonus);
-    sfx.victory();
-    for (const it of items) if (HAZARDS.has(it.kind) || it.kind === 'MARK') hideItem(it);
-    shock.active = false; shock.mesh.visible = false; stompT = 0;
-  } else {
-    pop(`BOSS HIT! ${theme.bossLoops - bossHp}/${theme.bossLoops}  +${b}`);
-    if (bossHp === 1) flash('LAST LOOP!');
-  }
 }
 
 function updateBoss(dt) {
   if (!bossObj) return;
   const B = bossObj, t = performance.now() / 1000;
-  // Flash white when hit.
+  if (bossPhase === 'fight') {
+    bossDone += speed * dt;
+    if (bossDone >= bossDist) defeatBoss();
+    else if (Math.floor(bossDone) % 5 === 0) updateBossBar();
+  }
+  // Keep it on the ground beside the track at its current distance.
+  place(B.g, angle + bossAhead() / R, bossX(), -0.4);
   if (B.flashT > 0) B.flashT -= dt;
   for (const m of B.mats) {
     if (B.flashT > 0) { m.emissive.setHex(0xffffff); m.emissiveIntensity = 0.8; }
     else { m.emissive.setHex(m.userData.c); m.emissiveIntensity = m.userData.e; }
   }
-  // Wind-up: lean back, then pitch forward toward the track when the attack lands.
-  if (B.windT >= 0 && bossState === 'fight') {
+  // Throw: lean back, then pitch forward toward you.
+  if (B.windT >= 0) {
     B.windT += dt;
     const u = B.windT / B.windDur;
-    B.body.rotation.z = u < 0.65 ? 0.18 * (u / 0.65) : u < 0.8 ? 0.18 - 0.48 * ((u - 0.65) / 0.15) : -0.3 * Math.max(0, 1 - (u - 0.8) / 0.6);
-    if (u > 1.4) { B.windT = -1; B.body.rotation.z = 0; }
+    B.body.rotation.x = u < 0.4 ? -0.2 * (u / 0.4) : u < 0.55 ? -0.2 + 0.5 * ((u - 0.4) / 0.15) : 0.3 * Math.max(0, 1 - (u - 0.55) / 0.6);
+    if (u > 1.2) { B.windT = -1; B.body.rotation.x = 0; }
   }
-  // Stomp: crouch, jump, land -> shockwave.
-  if (stompT > 0) {
-    stompT -= dt;
-    B.body.position.y = stompT > 0.45 ? -1.5 * (1 - (stompT - 0.45) / 0.65) : stompT > 0.15 ? 4 * Math.sin(Math.PI * (0.45 - stompT) / 0.3) : 0;
-    if (stompT <= 0) {
-      B.body.position.y = 0;
-      shock.active = true; shock.r = 9; shock.mesh.visible = true;
-      shake = Math.max(shake, 0.4); sfx.thud();
-    }
-  } else if (bossState === 'fight') {
-    B.body.position.y = Math.max(0, Math.sin(t * 1.6)) * 0.3;
-  }
-  if (shock.active) {
-    shock.r += 13 * dt;
-    shock.mesh.scale.set(shock.r, 1, shock.r);
-    // Hits you if it passes under your feet while you are on the ground.
-    if (Math.abs(shock.r - (R + px)) < 0.55 && py < 0.5 && pw.orbit <= 0 && hopT <= 0) crash(null);
-    if (shock.r > R + TRACK_HALF + 4) { shock.active = false; shock.mesh.visible = false; }
-  }
-  // Defeat: the boss sinks and topples, then you hop to the next planet.
-  if (bossState === 'down') {
+  if (bossPhase === 'down') {
     bossEndT -= dt;
-    B.body.position.y -= dt * 7;
-    B.body.rotation.z += dt * 0.5;
-    if (Math.random() < 0.3) shake = Math.max(shake, 0.2);
-    if (bossEndT <= 0 && hopT <= 0) { bossState = 'gone'; startHop('planet'); }
+    B.body.position.y -= dt * 6;
+    B.body.rotation.z += dt * 0.6;
+    if (bossEndT <= 0 && hopT <= 0) { removeBoss(); startHop(); }
+  } else if (stompT > 0) {
+    B.body.position.y = stompT > 0.35 ? -1.2 * (1 - (stompT - 0.35) / 0.45) : 3.5 * Math.sin(Math.PI * (0.35 - stompT) / 0.35);
+  } else {
+    B.body.position.y = Math.max(0, Math.sin(t * 1.6)) * 0.4;
   }
 }
 
-// Falling attacks: they drop from the sky onto their red markers, then stay as obstacles.
-function updateDrops(dt) {
+// Thrown attacks fly in an arc from the boss onto their red markers, then stay as obstacles.
+// Stomp waves roll toward the runner.
+function updateThrows(dt) {
   for (const it of items) {
-    const d = it.drop;
-    if (!d || d.t >= d.dur) continue;
-    d.t = Math.min(d.dur, d.t + dt);
-    const u = d.t / d.dur;
-    it.dropY = d.h * (1 - u * u);
-    placeItem(it);
-    if (d.t >= d.dur) {
-      it.dropY = 0; placeItem(it);
+    if (it.vel) { it.phi -= (it.vel * dt) / R; placeItem(it); }
+    const f = it.fly;
+    if (!f || f.t >= f.dur) continue;
+    f.t = Math.min(f.dur, f.t + dt);
+    const u = f.t / f.dur;
+    if (!bossObj) f.t = f.dur;
+    if (f.t < f.dur) {
+      const phiB = angle + bossAhead() / R, xB = bossX(), yB = BOSS_SIZE * 0.85;
+      for (const p of it.parts) {
+        const tphi = it.phi + p.dm / R, tx = it.x + (p.dx || 0);
+        place(p.obj, phiB + (tphi - phiB) * u, xB + (tx - xB) * u, yB + (p.y - yB) * u + 8 * Math.sin(Math.PI * u));
+        p.obj.rotateX(u * 5);
+      }
+    } else {
+      placeItem(it);
       if (it.marks) for (const m of it.marks) hideItem(m);
       shake = Math.max(shake, 0.2); sfx.thud();
       if (it.alive) burst(it, 0x9a8a7a);
@@ -766,12 +726,6 @@ const curbs = [-1, 1].map(s => {
 
 const AX = new THREE.Vector3(1, 0, 0);
 function place(obj, phi, x, yCenter) {
-  if (mode === 'arena') {      // flat ring around the boss: x = radial offset, y = height
-    const rr = R + x;
-    obj.position.set(rr * Math.cos(phi), yCenter, -rr * Math.sin(phi));
-    obj.quaternion.setFromAxisAngle(AY, phi);
-    return;
-  }
   const r = R + yCenter;
   obj.position.set(x, r * Math.cos(phi), -r * Math.sin(phi));
   obj.quaternion.setFromAxisAngle(AX, -phi);
@@ -1121,8 +1075,9 @@ const KIND = {
   SWEEPLOW: { h: 0.9, y0: 0, d: 1.4, color: 0xff8c26 },
   SWEEPHIGH:{ h: 1.4, y0: 1.0, d: 1.4, color: 0xd940cc },
   MARK:     { h: 0.04, y0: 0.02, d: 2.6, color: 0xff2a2a },
+  SHOCK:    { h: 0.5, y0: 0, d: 0.7, color: 0xffffff },
 };
-const HAZARDS = new Set(['LOW', 'HIGH', 'WALL', 'MOVER', 'PIT', 'PLATFORM', 'FIST', 'BLOCK', 'SWEEPLOW', 'SWEEPHIGH']);
+const HAZARDS = new Set(['LOW', 'HIGH', 'WALL', 'MOVER', 'PIT', 'PLATFORM', 'FIST', 'BLOCK', 'SWEEPLOW', 'SWEEPHIGH', 'SHOCK']);
 const POWERS = {
   magnet: { color: 0x00e5ff, time: 10, label: 'MAGNET' },
   shield: { color: 0x3dff6e, time: 0,  label: 'SHIELD' },
@@ -1167,6 +1122,11 @@ function addItem(kind, phi, x, opt = {}) {
     const m = new THREE.Mesh(boxGeo, glow(k.color));
     m.scale.set(w, h, len);
     it.parts.push({ obj: m, dm: 0, y: 0.03 });
+  } else if (kind === 'SHOCK') {
+    // Stomp wave rolling toward the runner: jump it.
+    const m = new THREE.Mesh(boxGeo, glow(theme.boss.wave));
+    m.scale.set(w, h, len);
+    it.parts.push({ obj: m, dm: 0, y: y0 + h / 2 });
   } else if (kind === 'MARK') {
     // Red warning marker on the track where a boss attack will land.
     const m = new THREE.Mesh(boxGeo, new THREE.MeshBasicMaterial({ color: 0xff2a2a, transparent: true, opacity: 0.55 }));
@@ -1204,21 +1164,20 @@ function addItem(kind, phi, x, opt = {}) {
       band(y0 + h * 0.5, 0xffffff, 0.14);
     } else if (kind === 'FIST' || kind === 'BLOCK') {   // boss knuckles / stone bands
       band(y0 + h - 0.15, 0x8a1a1a, 0.18); band(y0 + 0.5, 0x8a1a1a, 0.12);
-    } else if (kind === 'SWEEPLOW' || kind === 'SWEEPHIGH') {
-      // The boss's arm reaching across the track from the middle of the ring.
-      const inner = 9, armLen = R - TRACK_HALF - inner;
-      it.parts.push({ obj: box(armLen + 0.4, h * 0.9, len * 0.9, theme.boss.accent), dm: 0, y: y0 + h / 2, dx: -(R - (inner + armLen / 2)) });
+    } else if (kind === 'SWEEPLOW') {                  // a thrown log across the track
       band(y0 + h / 2, 0xffffff, 0.08);
+    } else if (kind === 'SWEEPHIGH') {                 // a thrown bar that lands on two posts: slide under
+      for (const sx of [-1, 1]) it.parts.push({ obj: box(0.18, y0, 0.18, 0x8a3a8a), dm: 0, y: y0 / 2, dx: sx * (w / 2 - 0.1) });
+      band(y0 + 0.08, 0xffffff, 0.08);
     }
   }
-  const wg = worldGroup();
-  for (const p of it.parts) wg.add(p.obj);
+  for (const p of it.parts) planet.add(p.obj);
   placeItem(it);
   items.push(it);
   return it;
 }
 function placeItem(it) {
-  for (const p of it.parts) place(p.obj, it.phi + p.dm / R, it.x + (p.dx || 0), p.y + (it.dropY || 0));
+  for (const p of it.parts) place(p.obj, it.phi + p.dm / R, it.x + (p.dx || 0), p.y);
 }
 function removeItem(it) {
   for (const p of it.parts) if (p.obj.parent) p.obj.parent.remove(p.obj);
@@ -1360,15 +1319,9 @@ function pickChunk() {
 function updateSpawning() {
   const ahead = Math.min(SPAWN_AHEAD_M / R, Math.PI * 0.9);
   const p = P();
-  if (mode === 'arena') scheduleAttacks();
-  while (mode === 'planet' && nextSpawn < angle + ahead) {
-    // Boss gate at the end of this world's laps.
-    if (!gatePlaced && nextSpawn > gatePhi - 45 / R) {
-      addItem('GATE', gatePhi, 0, { w: TRACK_HALF * 2, len: 1.2 });
-      gatePlaced = true;
-      nextSpawn = gatePhi + 20 / R;
-      continue;
-    }
+  // During the boss chase the boss's throws replace the normal patterns.
+  const bossEnd = worldStart + theme.lapsToBoss * Math.PI * 2;
+  while (nextSpawn < angle + ahead && (bossPhase === 'none' || bossPhase === 'intro') && nextSpawn < bossEnd - 10 / R) {
     let name;
     if (calmLeft > 0) { name = 'calm'; calmLeft = 0; waveLeft = WAVE_M[opts.diff] || 260; }
     else name = pickChunk();
@@ -1415,8 +1368,9 @@ function reset() {
   ST = computeStats(); airJumps = 0; superActive = false; hangUsed = 0; smashes = 0;
   meter = 0; abilityT = 0; particles.forEach(p => scene.remove(p.m)); particles.length = 0;
   waveLeft = WAVE_M[opts.diff] || 260; calmLeft = 0; hopT = 0;
-  if (mode === 'arena') exitArena();
-  worldStart = 0; worldLap = 0; gatePhi = THEMES[0].lapsToBoss * Math.PI * 2; gatePlaced = false; bossKills = 0;
+  removeBoss();
+  worldStart = 0; worldLap = 0; bossKills = 0; bossDist = 0; bossDone = 0;
+  if (THEMES[0].lapsToBoss <= 1) startBossIntro();
   angle = 0; speed = P().start; dist = 0; spawnedChunks = 0; powerIn = 90;
   lane = 0; px = 0; py = 0; vy = 0; slideT = 0; jumpBufferT = 0; grounded = true; groundY = 0;
   coins = 0; lap = 0; shake = 0; squash = 0; pts = 0; closeCalls = 0;
@@ -1508,27 +1462,25 @@ function step(dt) {
   angle += (speed / R) * dt;
   dist += speed * dt;
   pts += speed * dt * mult();
-  if (mode === 'planet') {
-    planet.rotation.x = angle % (Math.PI * 2);
-    const wl = Math.floor((angle - worldStart) / (Math.PI * 2));
-    if (wl > worldLap) {
-      worldLap = wl; lap++;
+  planet.rotation.x = angle % (Math.PI * 2);
+  const wl = Math.floor((angle - worldStart) / (Math.PI * 2));
+  if (wl > worldLap && hopT <= 0) {
+    worldLap = wl; lap++;
+    if (worldLap === theme.lapsToBoss) startBossFight();            // laps done: the chase starts
+    else if (bossPhase === 'none') {
       speed = Math.min(P().max, speed + LAP_BONUS);
-      if (hopT > 0) { /* the hop shows its own message */ }
+      if (worldLap === theme.lapsToBoss - 1) startBossIntro();       // final lap: the boss shows up
       else if (opts.shrink && R > MIN_R + 0.01) {
         shrinkFrom = R; targetR = Math.max(MIN_R, R * SHRINK_FACTOR); shrinkT = 0;
         flash(`LAP ${worldLap + 1}\nSHRINK`);
-      } else flash(worldLap + 1 >= theme.lapsToBoss ? 'FINAL LAP\nBOSS AHEAD' : `LAP ${worldLap + 1}`);
+      } else flash(`LAP ${worldLap + 1}`);
       sfx.lap();
     }
-  } else {
-    arena.rotation.y = -(angle % (Math.PI * 2));
-    const lp = Math.floor((angle - arenaStart) / (Math.PI * 2));
-    if (lp > bossLoops && bossState === 'fight') { bossLoops = lp; bossHit(); }
-    updateBoss(dt);
   }
-  updateDrops(dt);
-  if (mode === 'planet' && shrinkT < 1) {
+  scheduleAttacks(dt);
+  updateBoss(dt);
+  updateThrows(dt);
+  if (shrinkT < 1) {
     shrinkT = Math.min(1, shrinkT + dt / SHRINK_TIME);
     const t = shrinkT * shrinkT * (3 - 2 * shrinkT);
     R = shrinkFrom + (targetR - shrinkFrom) * t;
@@ -1626,10 +1578,10 @@ function collide(dt) {
       placeItem(it);
     }
 
-    if (it.kind === 'MARK' || (it.drop && it.drop.t < it.drop.dur)) continue;
+    if (it.kind === 'MARK' || (it.fly && it.fly.t < it.fly.dur)) continue;
     const overlapZ = Math.abs(d) <= it.hd + hd;
     const overlapX = Math.abs(it.x - px) <= it.hw + hw;
-    if (it.kind === 'GATE') { if (overlapZ && hopT <= 0) { it.alive = false; startHop('arena'); } continue; }
+    if (it.kind === 'GATE') continue;
 
     // Close-call tracking for hazards the player is passing.
     if (HAZARDS.has(it.kind) && !it.passed && it.kind !== 'PLATFORM') {
@@ -1680,7 +1632,7 @@ function useAbility() {
     abilityT = 1.6;                    // just for the visual trail
   } else { abilityT = ST.abilityTime; abilityTotal = ST.abilityTime; }
 }
-const SMASHABLE = new Set(['LOW', 'HIGH', 'WALL', 'MOVER', 'FIST', 'BLOCK', 'SWEEPLOW', 'SWEEPHIGH']);
+const SMASHABLE = new Set(['LOW', 'HIGH', 'WALL', 'MOVER', 'FIST', 'BLOCK', 'SWEEPLOW', 'SWEEPHIGH', 'SHOCK']);
 function meteorStrike() {
   let n = 0;
   for (const o of items) { const d = aheadM(o); if (o.alive && SMASHABLE.has(o.kind) && d > -1 && d < 9) { smashItem(o, true, false); n++; } }
@@ -1731,12 +1683,11 @@ function updateParticles(dt) {
     if (p.life <= 0) { scene.remove(p.m); particles.splice(i, 1); }
   }
 }
-function startHop(target = 'planet') {
-  hopTarget = target;
+function startHop() {
   hopT = HOP_TIME; hopSwapped = false; hopBase = py;
   pw.orbit = 0; slideT = 0; vy = 0;
   pw.invuln = HOP_TIME + 1.2;
-  flash(target === 'arena' ? 'BOSS FIGHT!' : 'PLANET HOP!'); sfx.hop();
+  flash('PLANET HOP!'); sfx.hop();
 }
 function updateHop(dt) {
   hopT = Math.max(0, hopT - dt);
@@ -1748,19 +1699,17 @@ function updateHop(dt) {
     hopSwapped = true;
     for (const it of items) removeItem(it);
     items = [];
-    if (hopTarget === 'arena') enterArena();
-    else {
-      if (mode === 'arena') exitArena();
-      themeIdx = (themeIdx + 1) % THEMES.length;
-      applyTheme(THEMES[themeIdx]);
-      R = targetR = shrinkFrom = THEMES[themeIdx].R; shrinkT = 1;
-      layoutWorld();
-      nextSpawn = angle + 30 / R;
-      spawnedChunks = 0;
-      waveLeft = WAVE_M[opts.diff] || 260; calmLeft = 0;
-      worldStart = angle; worldLap = 0; gatePhi = angle + theme.lapsToBoss * Math.PI * 2; gatePlaced = false;
-      flash(THEMES[themeIdx].name);
-    }
+    removeBoss();
+    themeIdx = (themeIdx + 1) % THEMES.length;
+    applyTheme(THEMES[themeIdx]);
+    R = targetR = shrinkFrom = THEMES[themeIdx].R; shrinkT = 1;
+    layoutWorld();
+    nextSpawn = angle + 30 / R;
+    spawnedChunks = 0;
+    waveLeft = WAVE_M[opts.diff] || 260; calmLeft = 0;
+    worldStart = angle; worldLap = 0;
+    flash(THEMES[themeIdx].name);
+    if (theme.lapsToBoss <= 1) startBossIntro();
   }
   if (hopT <= 0) { $('fade').style.opacity = 0; py = Math.max(py, 0); vy = -5; }
 }
@@ -1843,14 +1792,8 @@ function render(dt) {
   camY += ((pw.orbit > 0 || hopT > 0 ? py * 1.1 : py * 0.6) - camY) * Math.min(1, dt * 3);
   let sx = 0, sy = 0;
   if (shake > 0) { shake = Math.max(0, shake - dt); sx = (Math.random() - 0.5) * shake; sy = (Math.random() - 0.5) * shake; }
-  if (mode === 'arena') {
-    // Turned toward the inside of the ring so the boss stays in view on the left.
-    camPos.set(camX + 6 + sx, R + 6.5 + camY + sy, 8 + camY * 0.6);
-    camLook.set(camX - 16, R + 5 + camY * 0.5, -12);
-  } else {
-    camPos.set(camX + sx, R + 4 + camY + sy, 6 + camY * 0.9);
-    camLook.set(camX, R - 1.5 + camY * 0.55, -12 - camY);
-  }
+  camPos.set(camX + sx, R + 4 + camY + sy, 6 + camY * 0.9);
+  camLook.set(camX, R - 1.5 + camY * 0.55, -12 - camY);
   camera.position.copy(camPos);
   camera.lookAt(camLook);
 
@@ -1867,8 +1810,8 @@ function render(dt) {
 let fps = 60;
 function updateHud() {
   $('score').innerHTML = score() + (mult() > 1 ? ' <span style="color:#ff4fa3;font-size:24px">x2</span>' : '');
-  $('info').innerHTML = `Coins ${coins}<br>${mode === 'arena' ? `Boss loop ${Math.min(bossLoops + 1, theme.bossLoops)}/${theme.bossLoops}` : `Lap ${worldLap + 1}/${theme.lapsToBoss}`}<br>${Math.round(speed * 3.6)} km/h` +
-    `<br>${mode === 'arena' ? 'Boss arena' : theme.name.charAt(0) + theme.name.slice(1).toLowerCase() + ' ' + Math.round(R) + ' m'}<br><span style="opacity:.6">${Math.round(fps)} fps</span>`;
+  $('info').innerHTML = `Coins ${coins}<br>${bossPhase === 'fight' || bossPhase === 'down' ? 'Boss chase' : `Lap ${Math.min(worldLap + 1, theme.lapsToBoss)}/${theme.lapsToBoss}`}<br>${Math.round(speed * 3.6)} km/h` +
+    `<br>${theme.name.charAt(0) + theme.name.slice(1).toLowerCase() + ' ' + Math.round(R) + ' m'}<br><span style="opacity:.6">${Math.round(fps)} fps</span>`;
   const list = [];
   for (const k of ['magnet', 'orbit', 'x2']) if (pw[k] > 0) list.push(`<span style="color:#${POWERS[k].color.toString(16).padStart(6, '0')}">${POWERS[k].label} ${Math.ceil(pw[k])}</span>`);
   if (pw.shield > 0) list.push(`<span style="color:#3dff6e">SHIELD</span>`);
@@ -2133,7 +2076,7 @@ reset();
 idle();
 requestAnimationFrame(frame);
 window.__game = { get state() { return state; }, get score() { return score(); }, action, startRun,
-  get items() { return items.length; }, get py() { return py; }, get pw() { return pw; }, get kinds() { return items.map(i => i.kind); }, get near() { return items.filter(i => i.alive).map(i => ({ k: i.kind, x: i.x, d: aheadM(i), hd: i.hd })); }, get grounded() { return grounded; }, useAbility, set meter(v) { meter = v; }, get abilityT() { return abilityT; }, get abilityTotal() { return abilityTotal; }, get mode() { return mode; }, get bossHp() { return bossHp; }, get bossState() { return bossState; }, get bossKills() { return bossKills; }, get worldLap() { return worldLap; }, get ST() { return ST; }, get smashes() { return smashes; }, get airJumps() { return airJumps; }, set hold(v) { holding = v; }, get pose() { return { ...curPose }; }, get combo() { return combo; }, get theme() { return theme.name; }, get hopT() { return hopT; }, startHop, activate, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
+  get items() { return items.length; }, get py() { return py; }, get pw() { return pw; }, get kinds() { return items.map(i => i.kind); }, get near() { return items.filter(i => i.alive).map(i => ({ k: i.kind, x: i.x, d: aheadM(i), hd: i.hd })); }, get grounded() { return grounded; }, useAbility, set meter(v) { meter = v; }, get abilityT() { return abilityT; }, get abilityTotal() { return abilityTotal; }, get bossPhase() { return bossPhase; }, get bossLeft() { return bossDist - bossDone; }, get bossAhead() { return bossObj ? bossAhead() : null; }, startBossIntro, startBossFight, get bossKills() { return bossKills; }, get worldLap() { return worldLap; }, get ST() { return ST; }, get smashes() { return smashes; }, get airJumps() { return airJumps; }, set hold(v) { holding = v; }, get pose() { return { ...curPose }; }, get combo() { return combo; }, get theme() { return theme.name; }, get hopT() { return hopT; }, startHop, activate, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
 </script>
 <script>
 window.addEventListener('error', e => { const el = document.getElementById('err'); el.style.display = 'block'; el.textContent = 'Error: ' + e.message; });
