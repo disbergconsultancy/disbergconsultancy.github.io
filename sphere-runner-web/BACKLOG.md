@@ -3,16 +3,20 @@
 Ideas discussed but not built yet.
 
 ## Progression: shared core upgrades (bought with coins)
-Separate from the per-character skill trees (which stay about play style).
-- **Stumble guard** (health alternative): hitting a small obstacle (crate, bar) makes you stumble
-  (lose combo, brief slowdown, lose some meter) instead of crashing. Walls and glowing floors still
-  end the run. 1-3 stumbles per run depending on upgrade level. Open question: use this at all, or
-  keep one hit = run over.
-- **Reflexes**: longer jump buffer, short grace window to jump after running off an edge.
-- **Quick recovery**: shorter landing crouch, faster slide stand-up; slide-cancel into jump.
-- **Head start**: begin each run with 20-40% ability meter.
-- **Power-up duration** and **Luck** (power-ups appear more often).
-- Guardrails: hard cap per bonus, rising prices, never shrink the hitbox.
+Separate from the per-character skill trees (which stay about play style). See docs/progression.html.
+- **Kept**: Luck (power-ups +6%/level, 5 levels), Power-up duration (+10%/level, 5 levels),
+  Stumble guard (L1: 1 stumble/run, L2: lighter penalty, L3: 2 stumbles/run, cap 2). A stumble on a
+  small obstacle (crate, bar, boulder) costs the combo, drains meter and slows you briefly; walls,
+  glowing floors and boss walls still end the run.
+- **Undecided**: Reflexes, Quick recovery.
+- **Dropped**: Head start.
+- Prices 100/200/400/700/1100 per level (Stumble guard 400/900/1500); coins saved between runs.
+
+## Skill tree open decisions
+- A: Double Jump Jumper-only; Runner capstone Slipstream instead.
+- B: XP tier in the scoring branches.
+- C: one boss-chase node per character.
+- D: fewer, bigger ranks.
 
 ## Retention
 - First-run-of-the-day bonus (e.g. double XP on the first 3 runs each day).

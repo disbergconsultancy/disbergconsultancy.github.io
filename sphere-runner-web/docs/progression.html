@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sphere Runner Progression Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: a stack of sections; each character tree is a grid of tier gates + three branch columns. */
+  --bg: #f3f5f9; --panel: #ffffff; --ink: #19202c; --muted: #5a6577; --line: #d5dbe6; --accent: #3d6fe0;
+  --runner: #3380ff; --smasher: #b9811a; --jumper: #1f9d50; --open: #d9480f;
+  --display: "Chakra Petch", "Segoe UI", system-ui, sans-serif; --body: "IBM Plex Sans", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#10141c; --panel:#18202c; --ink:#e7ecf4; --muted:#9aa6b8; --line:#2b3544; --accent:#7fa6ff; --runner:#6aa5ff; --smasher:#f0b545; --jumper:#4fd283; --open:#ff8a4c; color-scheme: dark; } }
+:root[data-theme="dark"] { --bg:#10141c; --panel:#18202c; --ink:#e7ecf4; --muted:#9aa6b8; --line:#2b3544; --accent:#7fa6ff; --runner:#6aa5ff; --smasher:#f0b545; --jumper:#4fd283; --open:#ff8a4c; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); }
+main { max-width: 1100px; margin: 0 auto; padding: 28px 16px 60px; display: grid; gap: 28px; }
+h1, h2, h3, h4 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: .02em; }
+h1 { font-size: clamp(26px, 5vw, 38px); }
+h2 { font-size: 22px; margin-bottom: 4px; }
+.lede { color: var(--muted); max-width: 65ch; margin: 6px 0 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+.flow svg { width: 100%; height: auto; color: var(--ink); }
+.flow .hl { stroke: var(--accent); stroke-width: 2.4; } .flow .hl2 { stroke: var(--smasher); stroke-width: 2.4; }
+figure { margin: 0; } figcaption { color: var(--muted); font-size: 13.5px; margin-top: 8px; max-width: 70ch; }
+.char header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 12px; }
+.char h3 { font-size: 24px; } .char header p { margin: 0; color: var(--muted); flex: 1 1 260px; }
+.c-runner h3 { color: var(--runner); } .c-smasher h3 { color: var(--smasher); } .c-jumper h3 { color: var(--jumper); }
+.c-runner { --c: var(--runner); } .c-smasher { --c: var(--smasher); } .c-jumper { --c: var(--jumper); }
+.scroll { overflow-x: auto; }
+.treegrid { display: grid; grid-template-columns: 92px repeat(3, minmax(170px, 1fr)); gap: 10px; min-width: 640px; }
+.gates { display: grid; }
+.gates::before { content: ""; }
+.gate { border-left: 3px solid var(--c); padding: 6px 8px; display: flex; flex-direction: column; justify-content: center; font-size: 12px; }
+.gate b { font-family: var(--display); font-size: 13px; } .gate span { color: var(--muted); }
+.branch h4 { font-size: 15px; display: flex; align-items: baseline; gap: 6px; }
+.branch h4 em { font: 500 11px var(--body); color: var(--muted); font-style: normal; margin-left: auto; }
+.node { position: relative; border: 1.5px solid color-mix(in srgb, var(--c) 55%, var(--line)); background: color-mix(in srgb, var(--c) 7%, var(--panel));
+  border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; height: 100px; }
+.node b { font-size: 14px; } .node small { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.node.cap { border-style: dashed; border-width: 2px; background: color-mix(in srgb, var(--c) 14%, var(--panel)); }
+.link { display: block; width: 2px; height: 12px; background: color-mix(in srgb, var(--c) 55%, var(--line)); justify-self: center; }
+.branch { display: grid; grid-template-rows: 34px 100px 12px 100px 12px 100px 12px 100px; }
+.gates { grid-template-rows: 34px 100px 12px 100px 12px 100px 12px 100px; }
+.gates .gate:nth-of-type(1) { grid-row: 2; } .gates .gate:nth-of-type(2) { grid-row: 4; } .gates .gate:nth-of-type(3) { grid-row: 6; } .gates .gate:nth-of-type(4) { grid-row: 8; }
+.pips { display: flex; gap: 4px; } .pips i { width: 10px; height: 10px; border-radius: 2px; background: var(--c); opacity: .8; display: block; }
+.flag { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--open); color: #fff; font: 700 11px var(--display); }
+.node .flag { position: absolute; top: -8px; right: -8px; }
+.node.open { outline: 2px solid var(--open); outline-offset: 2px; }
+.boss-flag { font-size: 12px; font-weight: 600; color: var(--open); border: 1px dashed var(--open); border-radius: 999px; padding: 2px 10px; }
+.shop { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.up { border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--panel); display: flex; flex-direction: column; gap: 6px; }
+.up p { margin: 0; font-size: 13px; } .up .per { color: var(--muted); } .up .tot { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: auto; }
+.uphead { display: flex; justify-content: space-between; align-items: center; gap: 8px; } .uphead b { font-family: var(--display); font-size: 16px; }
+.chip { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; }
+.s-keep { border-color: color-mix(in srgb, var(--jumper) 60%, var(--line)); } .s-keep .chip { color: var(--jumper); }
+.s-undecided { border-style: dashed; } .s-undecided .chip { color: var(--open); }
+.s-dropped { opacity: .5; } .s-dropped b { text-decoration: line-through; } .s-dropped .chip { color: var(--muted); }
+.lv { list-style: none; padding: 0; margin: 2px 0 0; display: flex; gap: 6px; }
+.lv li { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.lv i { width: 26px; height: 8px; border-radius: 3px; background: color-mix(in srgb, var(--smasher) 70%, var(--line)); display: block; }
+.decisions ol { margin: 8px 0 0; padding-left: 0; list-style: none; display: grid; gap: 10px; }
+.decisions li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: start; }
+.decisions li p { margin: 0; } .decisions li small { color: var(--muted); display: block; }
+.numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
+.numbers div { border-left: 3px solid var(--accent); padding: 2px 10px; } .numbers b { font: 700 20px var(--display); display: block; font-variant-numeric: tabular-nums; } .numbers span { font-size: 12px; color: var(--muted); }
+</style></head>
+<body><main>
+<header>
+  <h1>Sphere Runner progression map</h1>
+  <p class="lede">How a player grows over weeks of play: per-character levels and skill trees for play style, and a shared core shop bought with coins. Orange markers are decisions that are still open.</p>
+  <div class="numbers">
+    <div><b>20</b><span>max level per character</span></div>
+    <div><b>19 / 33</b><span>skill points you get / tree size</span></div>
+    <div><b>~250</b><span>runs to level 20</span></div>
+    <div><b>7,700</b><span>coins for the 3 kept core upgrades</span></div>
+  </div>
+</header>
+<section class="panel"><figure class="flow">
+<svg viewBox="0 0 760 250" role="img" aria-label="Each run gives XP and coins. XP raises the character's level; each level gives a skill point for that character's tree. Coins buy shared core upgrades for all characters.">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+<g fill="none" stroke="currentColor" stroke-width="1.6">
+<rect x="10" y="95" width="110" height="60" rx="10"/>
+<rect x="200" y="25" width="120" height="60" rx="10"/><rect x="400" y="25" width="140" height="60" rx="10"/><rect x="620" y="25" width="130" height="60" rx="10" class="hl"/>
+<rect x="200" y="165" width="120" height="60" rx="10"/><rect x="400" y="165" width="140" height="60" rx="10"/><rect x="620" y="165" width="130" height="60" rx="10" class="hl2"/>
+<path d="M120,115 C160,115 160,55 198,55" marker-end="url(#ar)"/><path d="M120,135 C160,135 160,195 198,195" marker-end="url(#ar)"/>
+<line x1="320" y1="55" x2="398" y2="55" marker-end="url(#ar)"/><line x1="540" y1="55" x2="618" y2="55" marker-end="url(#ar)"/>
+<line x1="320" y1="195" x2="398" y2="195" marker-end="url(#ar)"/><line x1="540" y1="195" x2="618" y2="195" marker-end="url(#ar)"/>
+</g>
+<g fill="currentColor" font-size="13" text-anchor="middle">
+<text x="65" y="122" font-weight="700">Run</text><text x="65" y="139" font-size="11">any character</text>
+<text x="260" y="52" font-weight="700">XP</text><text x="260" y="69" font-size="11">per character</text>
+<text x="470" y="52" font-weight="700">Level 1 → 20</text><text x="470" y="69" font-size="11">~250 runs to max</text>
+<text x="685" y="52" font-weight="700">Skill tree</text><text x="685" y="69" font-size="11">19 of 33 points</text>
+<text x="260" y="192" font-weight="700">Coins</text><text x="260" y="209" font-size="11">saved between runs</text>
+<text x="470" y="192" font-weight="700">Core shop</text><text x="470" y="209" font-size="11">shared by all three</text>
+<text x="685" y="192" font-weight="700">Core upgrades</text><text x="685" y="209" font-size="11">general progress</text>
+</g>
+<g fill="currentColor" font-size="11" text-anchor="middle" opacity=".75">
+<text x="90" y="62">distance, coins, close</text><text x="90" y="75">calls, smashes, bosses</text>
+<text x="359" y="45">level up</text><text x="579" y="45">+1 point</text>
+<text x="160" y="228">coins picked up</text>
+<text x="359" y="185">spend</text><text x="579" y="185">buy levels</text>
+</g>
+</svg>
+<figcaption>Two layers. Skill trees are per character and shape <i>style</i>; the core shop is shared and gives general progress. Nothing in either layer gives an extra life, except the capped Stumble guard.</figcaption>
+</figure></section>
+<section><h2>Character skill trees</h2><p class="lede">Each branch has four tiers. A tier opens once you have spent enough points in that branch; the capstone (dashed) needs 8. Squares are ranks.</p></section>
+<div class="panel scroll"><section class="char c-runner">
+  <header><h3>Runner</h3><p>Baseline all-rounder · ability: Focus (slow-motion)</p><span class="boss-flag">C: + 1 boss node?</span></header>
+  <div class="treegrid"><div class="gates"><div class="gate"><b>Tier 1</b><span>open</span></div><div class="gate"><b>Tier 2</b><span>2 pts in branch</span></div><div class="gate"><b>Tier 3</b><span>5 pts in branch</span></div><div class="gate"><b>Capstone</b><span>8 pts in branch</span></div></div><div class="branch k-scoring"><h4>Flow <span class="flag inline">B</span><em>scoring · 11 pts</em></h4><div class="node"><b>Rhythm</b><span class="pips"><i></i><i></i><i></i><i></i></span><small>Combo window +0.3 s / rank</small></div><span class="link"></span><div class="node"><b>Close Shave</b><span class="pips"><i></i><i></i><i></i></span><small>Close calls count 8 cm further, +10 pts / rank</small></div><span class="link"></span><div class="node"><b>Chain Master</b><span class="pips"><i></i><i></i><i></i></span><small>Combo level every 9 / 8 / 7 pickups</small></div><span class="link"></span><div class="node cap"><b>Crescendo</b><span class="pips"><i></i></span><small>Combo can reach x6</small></div></div><div class="branch k-movement"><h4>Agility <em>movement · 11 pts</em></h4><div class="node"><b>Quick Feet</b><span class="pips"><i></i><i></i><i></i><i></i></span><small>Lane switch +6% / rank</small></div><span class="link"></span><div class="node"><b>Air Control</b><span class="pips"><i></i><i></i><i></i></span><small>Air dash +25%, float +0.1 s / rank</small></div><span class="link"></span><div class="node"><b>Spring</b><span class="pips"><i></i><i></i><i></i></span><small>Jump +5% higher / rank</small></div><span class="link"></span><div class="node cap open"><span class="flag" title="Open A: move Double Jump to the Jumper only; Runner gets Slipstream (after a close call: 1 s of +15% lane speed)">A</span><b>Double Jump</b><span class="pips"><i></i></span><small>Jump once more in mid-air</small></div></div><div class="branch k-ability"><h4>Focus <em>ability · 11 pts</em></h4><div class="node"><b>Charge</b><span class="pips"><i></i><i></i><i></i><i></i></span><small>Meter fills +10% / rank</small></div><span class="link"></span><div class="node"><b>Deep Focus</b><span class="pips"><i></i><i></i><i></i></span><small>Focus +0.5 s / rank</small></div><span class="link"></span><div class="node"><b>Stillness</b><span class="pips"><i></i><i></i><i></i></span><small>Slow-mo 41% / 37% / 33%</small></div><span class="link"></span><div class="node cap"><b>Focus Field</b><span class="pips"><i></i></span><small>Coins fly to you during Focus</small></div></div></div>
+</section></div>
+<div class="panel scroll"><section class="char c-smasher">
+  <header><h3>Smasher</h3><p>Heavy · lower jump · ability: Smash (3 s, up to 5 s)</p><span class="boss-flag">C: + 1 boss node?</span></header>
+  <div class="treegrid"><div class="gates"><div class="gate"><b>Tier 1</b><span>open</span></div><div class="gate"><b>Tier 2</b><span>2 pts in branch</span></div><div class="gate"><b>Tier 3</b><span>5 pts in branch</span></div><div class="gate"><b>Capstone</b><span>8 pts in branch</span></div></div><div class="branch k-ability"><h4>Demolition <em>ability · 11 pts</em></h4><div class="node"><b>Fuel</b><span class="pips"><i></i><i></i><i></i><i></i></span><small>Meter fills +8% / rank</small></div><span class="link"></span><div class="node"><b>Momentum</b><span class="pips"><i></i><i></i><i></i></span><small>+0.1 s per smash / rank</small></div><span class="link"></span><div class="node"><b>Overdrive</b><span class="pips"><i></i><i></i><i></i></span><small>Smash cap +0.5 s / rank (max 6.5 s)</small></div><span class="link"></span><div class="node cap"><b>Shockwave</b><span class="pips"><i></i></span><small>Also smashes blocks beside it</small></div></div><div class="branch k-movement"><h4>Bulk <em>movement · 11 pts</em></h4><div class="node"><b>Power Legs</b><span class="pips"><i></i><i></i><i></i><i></i></span><small>Jump +5% higher / rank</small></div><span class="link"></span><div class="node"><b>Ground Pound</b><span class="pips"><i></i><i></i><i></i></span><small>Slam +15% faster / rank</small></div><span class="link"></span><div class="node"><b>Sprinter</b><span class="pips"><i></i><i></i><i></i></span><small>Lane switch +5% / rank</small></div><span class="link"></span><div class="node cap"><b>Battering Ram</b><span class="pips"><i></i></span><small>Sliding breaks crates</small></div></div><div class="branch k-scoring"><h4>Plunder <span class="flag inline">B</span><em>scoring · 11 pts</em></h4><div class="node"><b>Scrap Value</b><span class="pips"><i></i><i></i><i></i><i></i></span><small>+5 pts per smash / rank</small></div><span class="link"></span><div class="node"><b>Coin Crusher</b><span class="pips"><i></i><i></i><i></i></span><small>Coins worth +10% / rank</small></div><span class="link"></span><div class="node"><b>Rampage</b><span class="pips"><i></i><i></i><i></i></span><small>+1 combo per smash / rank</small></div><span class="link"></span><div class="node cap"><b>Jackpot</b><span class="pips"><i></i></span><small>3 coins per smashed block</small></div></div></div>
+</section></div>
+<div class="panel scroll"><section class="char c-jumper">
+  <header><h3>Jumper</h3><p>Light · higher jump, longer air time · ability: Super jump</p><span class="boss-flag">C: + 1 boss node?</span></header>
+  <div class="treegrid"><div class="gates"><div class="gate"><b>Tier 1</b><span>open</span></div><div class="gate"><b>Tier 2</b><span>2 pts in branch</span></div><div class="gate"><b>Tier 3</b><span>5 pts in branch</span></div><div class="gate"><b>Capstone</b><span>8 pts in branch</span></div></div><div class="branch k-movement"><h4>Skyward <em>movement · 11 pts</em></h4><div class="node"><b>Spring Legs</b><span class="pips"><i></i><i></i><i></i><i></i></span><small>Jump +4% higher / rank</small></div><span class="link"></span><div class="node"><b>Glider</b><span class="pips"><i></i><i></i><i></i></span><small>Float +0.12 s / rank</small></div><span class="link"></span><div class="node"><b>Quick Landing</b><span class="pips"><i></i><i></i><i></i></span><small>Slam +15% faster / rank</small></div><span class="link"></span><div class="node cap"><b>Double Jump</b><span class="pips"><i></i></span><small>Jump once more in mid-air</small></div></div><div class="branch k-ability"><h4>Leap <em>ability · 11 pts</em></h4><div class="node"><b>Wind Up</b><span class="pips"><i></i><i></i><i></i><i></i></span><small>Meter fills +8% / rank</small></div><span class="link"></span><div class="node"><b>Stratosphere</b><span class="pips"><i></i><i></i><i></i></span><small>Super jump +10% higher / rank</small></div><span class="link"></span><div class="node"><b>Hang Time</b><span class="pips"><i></i><i></i><i></i></span><small>Hover 0.25 s at the top / rank</small></div><span class="link"></span><div class="node cap"><b>Meteor</b><span class="pips"><i></i></span><small>Landing smashes blocks just ahead</small></div></div><div class="branch k-scoring"><h4>Aerial <span class="flag inline">B</span><em>scoring · 11 pts</em></h4><div class="node"><b>Daredevil</b><span class="pips"><i></i><i></i><i></i><i></i></span><small>Close calls +6 pts / rank</small></div><span class="link"></span><div class="node"><b>High Roller</b><span class="pips"><i></i><i></i><i></i></span><small>Air coins worth +20% / rank</small></div><span class="link"></span><div class="node"><b>Wind Rider</b><span class="pips"><i></i><i></i><i></i></span><small>Combo window +0.25 s / rank</small></div><span class="link"></span><div class="node cap"><b>Updraft</b><span class="pips"><i></i></span><small>Air close calls charge the meter</small></div></div></div>
+</section></div>
+<section class="panel"><h2>Core shop (coins, shared)</h2><p class="lede">Prices rise per level. Status reflects the latest decisions: Head start is out, Reflexes and Quick recovery are undecided.</p>
+<div class="shop" style="margin-top:12px"><div class="up s-keep"><div class="uphead"><b>Luck</b><span class="chip">keep</span></div><p>Power-ups appear more often</p><p class="per">+6% / level → +30%</p><ul class="lv"><li><i></i><span>100</span></li><li><i></i><span>200</span></li><li><i></i><span>400</span></li><li><i></i><span>700</span></li><li><i></i><span>1100</span></li></ul><p class="tot">2,500 coins to max</p></div><div class="up s-keep"><div class="uphead"><b>Power-up duration</b><span class="chip">keep</span></div><p>Magnet, x2 and Orbit last longer</p><p class="per">+10% / level → +50%</p><ul class="lv"><li><i></i><span>100</span></li><li><i></i><span>200</span></li><li><i></i><span>400</span></li><li><i></i><span>700</span></li><li><i></i><span>1100</span></li></ul><p class="tot">2,500 coins to max</p></div><div class="up s-keep"><div class="uphead"><b>Stumble guard</b><span class="chip">keep</span></div><p>Small hits (crate, bar, boulder) make you stumble instead of crash: combo lost, meter drained, short slowdown. Walls, glowing floors and boss walls still end the run.</p><p class="per">L1: 1 stumble/run · L2: lighter penalty · L3: 2 stumbles/run (cap)</p><ul class="lv"><li><i></i><span>400</span></li><li><i></i><span>900</span></li><li><i></i><span>1500</span></li></ul><p class="tot">2,800 coins to max</p></div><div class="up s-undecided"><div class="uphead"><b>Reflexes</b><span class="chip">undecided</span></div><p>Longer jump buffer, short late-jump grace after an edge</p><p class="per">+0.03 s / level</p><ul class="lv"><li><i></i><span>100</span></li><li><i></i><span>200</span></li><li><i></i><span>400</span></li><li><i></i><span>700</span></li><li><i></i><span>1100</span></li></ul><p class="tot">2,500 coins to max</p></div><div class="up s-undecided"><div class="uphead"><b>Quick recovery</b><span class="chip">undecided</span></div><p>Faster landing crouch and slide stand-up</p><p class="per">+10% / level</p><ul class="lv"><li><i></i><span>100</span></li><li><i></i><span>200</span></li><li><i></i><span>400</span></li><li><i></i><span>700</span></li><li><i></i><span>1100</span></li></ul><p class="tot">2,500 coins to max</p></div><div class="up s-dropped"><div class="uphead"><b>Head start</b><span class="chip">dropped</span></div><p>Start each run with meter</p><p class="per">—</p><ul class="lv"></ul><p class="tot">not in the game</p></div></div></section>
+<section class="panel decisions"><h2>Open decisions</h2><ol>
+<li><span class="flag">A</span><p><b>Double Jump appears in two trees.</b> Make it Jumper-only and give the Runner's Agility capstone <i>Slipstream</i>?<small>Double Jump on the Runner is the strongest capstone in the game and blurs the Jumper's identity.</small></p></li>
+<li><span class="flag">B</span><p><b>Scoring branches (Flow, Plunder, Aerial) only add points.</b> Add one tier that also gives +10% XP?<small>Otherwise players who care about levelling skip them.</small></p></li>
+<li><span class="flag">C</span><p><b>No node touches the boss chase.</b> One boss node per character?<small>Runner: Focus slows boss throws in mid-air · Smasher: Smash breaks throws in flight · Jumper: jumping a thrown log or bar charges the meter.</small></p></li>
+<li><span class="flag">D</span><p><b>Small ranks are hard to feel.</b> Fewer, bigger ranks (2 × 10% instead of 4 × 5%), same totals?</p></li>
+<li><span class="flag">E</span><p><b>Reflexes and Quick recovery</b> in the core shop: keep, or leave out?</p></li>
+</ol></section>
+</main></body></html>
