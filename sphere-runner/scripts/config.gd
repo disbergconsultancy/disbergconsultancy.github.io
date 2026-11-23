@@ -175,7 +175,7 @@ var THEME: Dictionary = THEMES[0]    # the current planet
 var difficulty := "medium"
 var character := "runner"
 var sound := true
-var hero_models := true     # 3D models for heroes and bosses (true) or the block figures (false)
+var hero_models := false    # 3D models for heroes and bosses (true) or the block figures (false, the game's style)
 
 
 func diff() -> Dictionary:

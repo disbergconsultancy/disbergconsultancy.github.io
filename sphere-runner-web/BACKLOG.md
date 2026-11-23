@@ -86,7 +86,7 @@ A boss is **composed from parts**, all data-driven:
 - **Leaderboards**: Game Center / Google Play Games. Separate boards per level bracket, and one for the daily
   challenge.
 - **Boss earlier in a world**: let a boss appear in the distance before the final lap to set the stage.
-- **Real models**: started. The three heroes use KayKit models (CC0) with KayKit animation clips and our toon layer
+- **Real models**: explored, kept as an option (the block style stays the default: it fits the game). The three heroes use KayKit models (CC0) with KayKit animation clips and our toon layer
   (menu setting "Hero models"). Still to do: own colours per hero, more clips (a real slide, an air-jump flip clip),
   and eventually commissioned heroes with their own identity.
   Bosses use 3D models (Tripo) animated in code: breathing, waddle or flapping, throw wind-up, stomp squash,

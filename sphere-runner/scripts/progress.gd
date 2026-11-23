@@ -74,7 +74,7 @@ func load_save() -> void:
 	Config.character = cfg.get_value("settings", "character", Config.character)
 	Config.difficulty = cfg.get_value("settings", "difficulty", Config.difficulty)
 	Config.sound = cfg.get_value("settings", "sound", Config.sound)
-	Config.hero_models = cfg.get_value("settings", "hero_models", Config.hero_models)
+	Config.hero_models = cfg.get_value("settings", "models_3d", Config.hero_models)
 
 
 func save() -> void:
@@ -88,7 +88,7 @@ func save() -> void:
 	cfg.set_value("settings", "character", Config.character)
 	cfg.set_value("settings", "difficulty", Config.difficulty)
 	cfg.set_value("settings", "sound", Config.sound)
-	cfg.set_value("settings", "hero_models", Config.hero_models)
+	cfg.set_value("settings", "models_3d", Config.hero_models)
 	cfg.save(SAVE_PATH)
 
 
