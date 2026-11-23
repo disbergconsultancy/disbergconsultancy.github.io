@@ -246,7 +246,9 @@ const modeKey = () => `${opts.char}_${opts.diff}_${opts.shrink ? 'S' : ''}${opts
 // Nodes shape how you play (movement, ability, scoring). None give extra lives.
 // =====================================================================
 const MAX_LEVEL = 20;
-const xpForNext = (lvl) => 100 + 60 * (lvl - 1);          // ~12,000 XP from level 1 to 20
+// XP needed for the next level grows with level^1.5: level 2 after the first run, level 10 after ~40 runs,
+// level 20 after ~74,000 XP (~250 runs of ~300 XP, a few weeks of casual play at ~10 runs a day).
+const xpForNext = (lvl) => Math.round(110 * Math.pow(lvl, 1.5));
 const TIER_REQ = [0, 2, 5, 8];                              // points needed in the branch to open each tier
 const heightUp = (s, f) => { s.jumpV *= Math.sqrt(1 + f); }; // jump height scales with velocity squared
 const TREES = {
