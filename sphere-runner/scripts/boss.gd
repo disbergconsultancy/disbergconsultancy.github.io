@@ -31,6 +31,12 @@ var _gate_state := 0          # 0 open, 1 closed (gap shown), 2 gap shift announ
 var _gate_gap := 0
 var _gate_mark: Item
 var _last_item: Item          # the last thrown item (decoy)
+var _jump_t := 0.0           # a "jump" attack (stomp, quake, low sweep) is still on its way
+var _bb: BossBody             # block body (one look per archetype); null with a 3D model
+var _pass_state := 0          # final pass: 0 not yet, 1 announced, 2 the boss blocks part of the track
+var _pass_lane := 0
+var _pass_items: Array[Item] = []
+var _pass_marks: Array[Item] = []
 
 
 func setup(g: Node) -> void:
@@ -45,10 +51,21 @@ func progress() -> float:
 ## Distance ahead of the runner: near the horizon for most of the chase, then you
 ## close the gap fast and run underneath it.
 func ahead() -> float:
-	var far := minf(0.85 * game.planet.radius, 42.0)
+	var far := _far()
 	if phase == "intro":
 		return far
 	return (far + Config.BOSS_SIZE) * (1.0 - pow(progress(), 5)) - Config.BOSS_SIZE
+
+
+func _far() -> float:
+	return minf(0.85 * game.planet.radius, 42.0)
+
+
+## Chase progress at which the final pass is announced (the boss is 24 m ahead, and past 60%).
+func _pass_progress() -> float:
+	var span := _far() + Config.BOSS_SIZE
+	var p24 := pow(1.0 - (24.0 + Config.BOSS_SIZE) / span, 0.2) if span > 24.0 + Config.BOSS_SIZE else 0.0
+	return maxf(0.6, p24)
 
 
 func _build() -> void:
@@ -63,20 +80,18 @@ func _build() -> void:
 	_overlay.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_overlay.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	_overlay.albedo_color = Color(0, 0, 0, 0)
+	_bb = null
 	if Config.hero_models and b.has("model"):
 		_build_model(b)
 		return
-	var s := Config.BOSS_SIZE
-	# A giant textured block (KayKit Block Bits: stone, sand, snow, lava) on two block legs.
-	var tex: String = "blockbits/" + b.get("block", "stone")
-	_block(tex, Vector3(s, s, s), Vector3(0, Config.BOSS_LIFT + s / 2.0, 0))
-	for sx in [-1.0, 1.0]:      # legs beside the track
-		for k in 2:
-			var lh := (Config.BOSS_LIFT + 0.5) / 2.0
-			_block(tex, Vector3(2.6, lh, 3.2), Vector3(sx * (Config.TRACK_HALF + 1.7), lh * (k + 0.5), 0))
-	var eye := _mat(b["eye"], 1.0)
-	for sx in [-1.0, 1.0]:      # eyes on the face toward the runner (+Z)
-		_box(Vector3(2.4, 1.5, 0.4), eye, Vector3(sx * 2.9, Config.BOSS_LIFT + s * 0.68, s / 2.0 + 0.1))
+	# Block body built from KayKit Block Bits textures, shaped by the archetype.
+	_bb = BossBody.new()
+	_body.add_child(_bb)
+	_bb.build(b, _overlay, _mat(b["eye"], 1.0))
+
+
+func arch() -> String:
+	return Config.THEME["boss"].get("archetype", "gate_walker")
 
 
 ## A boss model (static mesh, animated in code): 1 m tall in the file, scaled to model_h,
@@ -190,6 +205,10 @@ func start_fight() -> void:
 	_pending.clear()
 	_gate.clear()
 	_gate_state = 0
+	_pass_state = 0
+	_jump_t = 0.0
+	_pass_items.clear()
+	_pass_marks.clear()
 	_stomp_t = 0.0
 	game.hud.flash("CATCH THE\n%s" % Config.THEME["boss"]["name"])
 
@@ -227,8 +246,7 @@ func update(dt: float) -> void:
 					var step: Dictionary = _pending[i]
 					_pending.remove_at(i)
 					step["fn"].call()
-			if Config.THEME["boss"]["signature"].has("gate_slam"):
-				_update_gate()
+			_update_pass()
 	planet.place(self, game.angle + ahead() / planet.radius, 0.0, -0.4)
 	# Flash white when defeated.
 	_flash_t = maxf(0.0, _flash_t - dt)
@@ -251,10 +269,10 @@ func update(dt: float) -> void:
 			game.on_boss_defeated()
 	elif _stomp_t > 0.0:
 		_body.position.y = -1.2 * (1.0 - (_stomp_t - 0.35) / 0.45) if _stomp_t > 0.35 else 3.5 * sin(PI * (0.35 - _stomp_t) / 0.35)
-	elif _model == null:
-		_body.position.y = maxf(0.0, sin(Time.get_ticks_msec() / 1000.0 * 1.6)) * 0.4
 	else:
 		_body.position.y = 0.0
+	if _bb:
+		_bb.animate(dt, game.speed, phase == "fight" and boss_phase() == 3)
 	if _model:
 		_animate_model(dt)
 	# White flash when defeated, red pulse when enraged.
@@ -287,6 +305,7 @@ func _schedule(dt: float) -> void:
 			game.shake = maxf(game.shake, 0.3)
 			game.sfx.play("smash")
 	_attack_t -= dt
+	_jump_t = maxf(0.0, _jump_t - dt)
 	if _attack_t > 0.0:
 		return
 	var bt: Dictionary = Config.THEME["boss"]
@@ -300,19 +319,32 @@ func _schedule(dt: float) -> void:
 	if target < 13.0:
 		_attack_t = 0.3
 		return              # about to pass it: no more throws
+	# One answer at a time: no new attacks in the ~3 s before a final pass that blocks the track.
+	if arch() != "gate_walker" or bt["signature"].has("gate_slam"):
+		if _pass_state > 0 or _gate_state > 0 or _pass_progress() - progress() < 3.0 * game.speed / dist:
+			_attack_t = 0.3
+			return
 	var pool: Dictionary = bt["throws"].duplicate()
 	if ph >= 2:
 		pool.merge(bt["signature"])
 		pool.erase("gate_slam")      # happens on its own at the final pass
-	if done < _lava_until:
-		pool.erase("block")   # a lava lane is active: never close the other two lanes
+	if done < _lava_until or _ice_ahead():
+		pool.erase("block")   # a lava or ice lane is active: never close the other two lanes
 	var kind := _pick(pool)
 	if kind == "stomp" and (_stomp_t > 0.0 or a < 22.0):
 		kind = "smash"
+	if kind == "ice_lane" and _wall_ahead():
+		kind = "smash"        # the ice could fill a wall's open lane: no way through
 	if (kind == "rolling_boulder" and a < 30.0) or (kind == "ice_lane" and a < 38.0):
 		kind = "smash"        # these need room between you and the boss
 	if kind == "quake_rhythm" and (a < 22.0 or _stomp_t > 0.0 or _pending.size() > 0):
 		kind = "smash"
+	# One jump at a time: two jump attacks close together could land you on the second one.
+	if kind in ["stomp", "sweep_low", "quake_rhythm"]:
+		if _jump_t > 0.0:
+			kind = "smash"
+		else:
+			_jump_t = 3.4 if kind == "quake_rhythm" else 2.4 if kind == "stomp" else 1.6
 	# Threat budget: the move's cost sets how long until the next one (minimum ~14 m apart).
 	var rate: float = bt["rate"] * (1.25 if ph == 3 else 1.1 if ph == 2 else 1.0)
 	_attack_t = maxf(Config.BOSS_MOVES[kind]["cost"] / rate, 14.0 / maxf(game.speed, 1.0))
@@ -320,9 +352,13 @@ func _schedule(dt: float) -> void:
 	if label != "" and not _used.has(kind):
 		_used[kind] = true
 		game.hud.flash(label + "!")    # announce a signature move the first time
-	if _do_move(kind, a, target):
-		return
-	_throw_with_combo(kind, target, ph, bt)
+	if _bb:
+		_bb.on_attack()
+	if not _do_move(kind, a, target):
+		_throw_with_combo(kind, target, ph, bt)
+	for it in game.planet.items:     # remember which move made each item (fairness reports)
+		if it.boss and not it.has_meta("move"):
+			it.set_meta("move", kind)
 
 
 ## Forces one move right now (screenshots and tests).
@@ -352,6 +388,7 @@ func _do_move(kind: String, a: float, target: float) -> bool:
 			return true
 		"meteor_shower":
 			_meteor_shower()
+			_attack_t = maxf(_attack_t, 1.05 + 14.0 / maxf(game.speed, 1.0))   # the next move waits for the last meteor
 			return true
 		"ice_lane":
 			_ice_lane()
@@ -373,7 +410,7 @@ func _throw_with_combo(kind: String, target: float, ph: int, bt: Dictionary) -> 
 	# Later phases: combos (a second throw right behind the first), if this boss does them.
 	# Fair-play: the combo keeps the first throw's safe lane free, so one answer covers both.
 	if ph >= 2 and target > 20.0 and _rng.randf() < bt["combo"] * (1.6 if ph == 3 else 1.0):
-		var combo_kind := "smash" if bt["throws"]["block"] == 0 or done < _lava_until or _rng.randf() < 0.5 else "block"
+		var combo_kind := "smash" if bt["throws"]["block"] == 0 or done < _lava_until or _ice_ahead() or _rng.randf() < 0.5 else "block"
 		_throw(combo_kind, game.angle + (target - 9.0) / planet.radius, safe)
 
 
@@ -463,6 +500,8 @@ func _meteor(lane: int) -> void:
 	if target < 13.0:
 		return
 	var phi: float = game.angle + target / planet.radius
+	if _is_open_lane(phi, lane):
+		return                                  # never in a wall's open lane
 	var m := planet.add_item("MARK", phi, Config.lane_x(lane), {"w": Config.LANE_W * 0.9})
 	m.boss = true
 	var it := planet.add_item("FIST", phi, Config.lane_x(lane), {"w": 1.6, "h": 1.8, "depth": 1.6})
@@ -501,7 +540,85 @@ func _decoy(target: float) -> void:
 	var it := _last_item
 	var lane := int(round(it.x / Config.LANE_W))
 	var to: int = lane + (1 if lane == -1 else -1 if lane == 1 else [-1, 1][_rng.randi() % 2])
+	# Never jump into the open lane of a wall nearby: that would leave no way through.
+	if _is_open_lane(it.phi, to):
+		return                          # stays an ordinary boulder
 	it.set_meta("decoy_to", Config.lane_x(to))
+
+
+## The final pass, by archetype (announced ~1.5 s ahead, then part of the track is blocked
+## by the boss itself, following it): gate-walker: run underneath; flyer: it swoops low,
+## slide under it; roller: it swerves into a side lane, overtake; burrower: it erupts in a
+## lane; twins: they stomp into the outer lanes, pass between them. Gate slam (a signature
+## move) replaces the pass of any archetype but the flyer.
+func _update_pass() -> void:
+	var b: Dictionary = Config.THEME["boss"]
+	if b["signature"].has("gate_slam") and arch() != "flyer":
+		_update_gate()
+		return
+	if arch() == "gate_walker":
+		return
+	var planet: Planet = game.planet
+	var a := ahead()
+	var phi: float = game.angle + a / planet.radius
+	if _pass_state == 0 and progress() > 0.6 and a < 24.0 and a > 15.0:
+		_pass_state = 1
+		match arch():
+			"flyer":    # the swoop spot stays put: you reach it at full speed, the flyer dives back to meet it
+				_pass_items.append(planet.add_item("SWOOP", phi, 0.0, {"w": Config.TRACK_HALF * 2.0, "invisible": true}))
+				for l in [-1, 0, 1]:
+					_pass_marks.append(planet.add_item("MARK", phi - 3.0 / planet.radius, Config.lane_x(l), {"w": Config.LANE_W * 0.9, "tint": Color(0.85, 0.25, 0.8, 0.6)}))
+				game.hud.flash("SWOOP!\nSLIDE UNDER IT")
+				_pass_state = 2
+			"roller", "burrower":
+				_pass_lane = [-1, 1][_rng.randi() % 2] if arch() == "roller" else [-1, 0, 1][_rng.randi() % 3]
+				_pass_marks.append(planet.add_item("MARK", phi, Config.lane_x(_pass_lane), {"w": Config.LANE_W * 0.9}))
+				game.hud.flash("IT SWERVES!" if arch() == "roller" else "IT ERUPTS!")
+			"twins":
+				for l in [-1, 1]:
+					_pass_marks.append(planet.add_item("MARK", phi, Config.lane_x(l), {"w": Config.LANE_W * 0.9}))
+				_pass_marks.append(planet.add_item("MARK", phi, 0.0, {"w": Config.LANE_W * 0.9, "safe": true}))
+				game.hud.flash("PASS BETWEEN!")
+		for m in _pass_marks:
+			m.boss = true
+		if _bb:
+			_bb.pass_lane = _pass_lane
+		game.sfx.play("swish")
+	elif _pass_state == 1 and a < 15.0:
+		_pass_state = 2
+		match arch():
+			"roller", "burrower":
+				_pass_items.append(planet.add_item("LEG", phi, Config.lane_x(_pass_lane), {"w": Config.LANE_W * 0.9, "invisible": true}))
+			"twins":
+				for l in [-1, 1]:
+					_pass_items.append(planet.add_item("LEG", phi, Config.lane_x(l), {"w": Config.LANE_W * 0.9, "invisible": true}))
+		for it in _pass_items:
+			it.boss = true
+		game.shake = maxf(game.shake, 0.4)
+		game.sfx.play("smash")
+	if _pass_state > 0 and arch() == "flyer":
+		for it in _pass_items + _pass_marks:
+			it.boss = true
+			if it.alive and game._ahead_m(it) < -3.0:
+				planet.hide_item(it)
+		if _bb and not _pass_items.is_empty():
+			var ia: float = game._ahead_m(_pass_items[0])
+			_bb.swoop_z = ahead() - ia             # dive back toward the runner, to the swoop spot
+			_bb.pass_u = clampf((24.0 - ia) / 14.0, 0.0, 1.0)
+		return
+	if _pass_state > 0:
+		for it in _pass_items:
+			if it.alive:
+				it.phi = phi
+				planet.place_item(it)
+		for m in _pass_marks:
+			if m.alive:
+				m.phi = phi - 3.0 / planet.radius
+				planet.place_item(m)
+				if a < 2.0:
+					planet.hide_item(m)
+		if _bb:
+			_bb.pass_u = clampf((24.0 - a) / 9.0, 0.0, 1.0)
 
 
 ## Gate slam (Magma Giant): when you reach the boss, its legs slam onto the track leaving
@@ -614,12 +731,13 @@ func _throw(kind: String, phi: float, keep_free := -2, coins := true) -> int:
 	var free_lane := 0
 	match kind:
 		"smash":   # red boulder on one lane: switch lanes
-			var l: int = ([-1, 0, 1].filter(func(x): return x != keep_free)).pick_random()
+			var choices := [-1, 0, 1].filter(func(x): return x != keep_free and not _is_open_lane(phi, x))
+			var l: int = choices.pick_random() if not choices.is_empty() else ([-1, 0, 1].filter(func(x): return x != keep_free)).pick_random()
 			mark.call([l])
 			it = planet.add_item("FIST", phi, Config.lane_x(l), {"w": 2.0})
 			free_lane = ([-1, 0, 1].filter(func(x): return x != l)).pick_random()
 		"block":   # red wall over two lanes: take the open one
-			var open: int = keep_free if keep_free != -2 else [-1, 0, 1][_rng.randi() % 3]
+			var open: int = keep_free if keep_free != -2 else _clear_lane(phi)
 			var lanes := [-1, 0, 1].filter(func(x): return x != open)
 			mark.call(lanes)
 			free_lane = open
@@ -648,6 +766,50 @@ func _throw(kind: String, phi: float, keep_free := -2, coins := true) -> int:
 			m += 1.6
 	_wind_t = 0.0
 	return free_lane
+
+
+## A lane with no other lane-blocking throw within 14 m of phi (so the open lane of a wall
+## is really open), picked at random among the clear ones.
+## True if a boss wall within 16 m of phi leaves `lane` as its open lane: nothing else may
+## land there, or the wall would have no way through.
+func _is_open_lane(phi: float, lane: int) -> bool:
+	var planet: Planet = game.planet
+	for w in planet.items:
+		if w.boss and w.alive and w.kind == "BLOCK" and absf(w.phi - phi) * planet.radius < 16.0 \
+				and absf(w.x - Config.lane_x(lane)) >= w.hw + 0.3:
+			return true
+	return false
+
+
+## A 2-lane wall from the boss still ahead of the runner.
+func _wall_ahead() -> bool:
+	for it in game.planet.items:
+		if it.boss and it.kind == "BLOCK" and it.alive and game._ahead_m(it) > -it.hd:
+			return true
+	return false
+
+
+## An ice lane still ahead of the runner (you cannot cross it: no switching on ice).
+func _ice_ahead() -> bool:
+	for it in game.planet.items:
+		if it.kind == "ICE" and it.alive and game._ahead_m(it) > -it.hd:
+			return true
+	return false
+
+
+func _clear_lane(phi: float) -> int:
+	var planet: Planet = game.planet
+	var clear := [-1, 0, 1]
+	for it in planet.items:
+		if it.boss and it.alive and it.kind in ["FIST", "ROLLER", "BLOCK", "LEG"] and absf(it.phi - phi) * planet.radius < 16.0:
+			var xs := [it.x]               # also where it is going: a decoy's new lane, a roller's switch
+			if it.has_meta("decoy_to"):
+				xs.append(it.get_meta("decoy_to"))
+			if it.has_meta("to_x"):
+				xs.append(it.get_meta("to_x"))
+			for x in xs:
+				clear = clear.filter(func(l): return absf(x - Config.lane_x(l)) >= it.hw + 0.3)
+	return clear[_rng.randi() % clear.size()] if not clear.is_empty() else [-1, 0, 1][_rng.randi() % 3]
 
 
 ## Throws fly in an arc from the boss onto their markers, then stay as obstacles.
@@ -683,11 +845,13 @@ func _update_throws(dt: float) -> void:
 			continue
 		if u < 1.0 and phase != "none":
 			var phi_b: float = game.angle + ahead() / planet.radius
-			var y_b := Config.BOSS_LIFT + Config.BOSS_SIZE * 0.5
+			if not it.has_meta("origin"):     # where the throw leaves the boss (depends on its body)
+				it.set_meta("origin", _bb.throw_origin() if _bb else Vector2(0.0, Config.BOSS_LIFT + Config.BOSS_SIZE * 0.5))
+			var o: Vector2 = it.get_meta("origin")
 			for p in it.parts:
 				var tphi: float = it.phi + p["dm"] / planet.radius
 				var tx: float = it.x + p.get("dx", 0.0)
-				planet.place(p["node"], lerpf(phi_b, tphi, u), lerpf(0.0, tx, u), lerpf(y_b, p["y"], u) + 8.0 * sin(PI * u))
+				planet.place(p["node"], lerpf(phi_b, tphi, u), lerpf(o.x, tx, u), lerpf(o.y, p["y"], u) + 8.0 * sin(PI * u))
 				p["node"].rotate_object_local(Vector3.RIGHT, u * 5.0)
 		else:
 			it.fly_t = -1.0

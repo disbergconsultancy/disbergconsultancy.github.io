@@ -384,7 +384,7 @@ func add_item(kind: String, phi: float, x: float, opts := {}) -> Item:
 			bm.size = Vector3(w, h, depth)
 			mm.mesh = bm
 			var red := StandardMaterial3D.new()
-			red.albedo_color = Color(0.2, 1, 0.4, 0.6) if opts.get("safe", false) else Color(1, 0.16, 0.16, 0.55)
+			red.albedo_color = Color(0.2, 1, 0.4, 0.6) if opts.get("safe", false) else opts.get("tint", Color(1, 0.16, 0.16, 0.55))
 			red.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 			red.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 			mm.material_override = red
@@ -419,6 +419,10 @@ func add_item(kind: String, phi: float, x: float, opts := {}) -> Item:
 		_:
 			it.parts.append({"node": _box(Vector3(w, h, depth), color), "dm": 0.0, "y": it.y0 + h / 2.0})
 			_add_details(it, kind, w, h, depth)
+	if opts.get("invisible", false):     # a hitbox only (the boss body is the visual)
+		for p in it.parts:
+			p["node"].free()
+		it.parts.clear()
 	for p in it.parts:
 		add_child(p["node"])
 	place_item(it)

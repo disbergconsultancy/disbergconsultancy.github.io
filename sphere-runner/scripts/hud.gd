@@ -305,6 +305,13 @@ func _build_menu() -> void:
 		b.add_theme_font_size_override("font_size", 22)
 		b.pressed.connect(func(): boss_test.emit(i))
 		brow.add_child(b)
+	var forge := Button.new()        # a random forged boss (any archetype, a later loop)
+	forge.text = "Forge"
+	forge.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	forge.custom_minimum_size = Vector2(0, 56)
+	forge.add_theme_font_size_override("font_size", 22)
+	forge.pressed.connect(func(): boss_test.emit(Config.THEMES.size()))
+	brow.add_child(forge)
 	stats_label = _text(box, "", 18)
 	stats_label.modulate = Color(1, 1, 1, 0.75)
 

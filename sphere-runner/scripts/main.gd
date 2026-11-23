@@ -53,6 +53,7 @@ var debris: Array = []
 # Worlds, planet hop and boss
 var boss: BossChase
 var theme_idx := 0
+var cycle := 0                 # endless loop: 0 = first time round the four planets, then forged bosses
 var world_start := 0.0         # angle at which this planet's laps began
 var world_lap := 0
 var hop_t := 0.0
@@ -207,10 +208,16 @@ func _build_environment() -> void:
 
 
 ## Switch to planet i: rebuild the globe, sky and haze.
-func _set_planet(i: int) -> void:
+## boss_def: use this boss (forge test); otherwise loops after the first get forged bosses.
+func _set_planet(i: int, boss_def := {}) -> void:
 	theme_idx = i
-	Config.THEME = Config.THEMES[i]
-	var th: Dictionary = Config.THEME
+	var th: Dictionary = Config.THEMES[i]
+	if not boss_def.is_empty() or cycle > 0:
+		th = th.duplicate()
+		th["boss"] = boss_def if not boss_def.is_empty() else Config.forge_boss(i, cycle)
+		th["boss_loops"] = th["boss_loops"] + mini(cycle, 2)
+		th["forged"] = true
+	Config.THEME = th
 	planet.build(th)
 	_sky_mat.sky_top_color = th["sky_top"]
 	_sky_mat.sky_horizon_color = th["sky_bottom"]
@@ -239,7 +246,8 @@ func reset() -> void:
 	planet.clear_items()
 	hop_t = 0.0
 	hud.fade.color.a = 0.0
-	if theme_idx != 0:
+	cycle = 0
+	if theme_idx != 0 or Config.THEME.get("forged", false):
 		_set_planet(0)
 	angle = 0.0
 	planet.rotation.x = 0.0
@@ -363,11 +371,17 @@ func crash(it: Item = null) -> void:
 
 
 ## Boss test: start on planet i's final lap, ~160 m before the chase, at mid-run speed.
-func start_boss_test(i: int) -> void:
+## i = number of planets: a forged boss (random planet, archetype and loop). boss_def: a given boss.
+func start_boss_test(i: int, boss_def := {}) -> void:
 	start_run()
 	test_run = i
 	planet.clear_items()
-	_set_planet(i)
+	var p := i
+	if i >= Config.THEMES.size():
+		p = randi() % Config.THEMES.size()
+		boss_def = Config.forge_boss(p, 1 + randi() % 3, randi())
+	_set_planet(p, boss_def)
+	i = p
 	var d: Dictionary = Config.diff()
 	speed = d["start"] + (d["max"] - d["start"]) * 0.4
 	_start_world()
@@ -409,9 +423,12 @@ func _update_hop(dt: float) -> void:
 		hop_swapped = true
 		boss.remove()
 		planet.clear_items()
-		_set_planet((theme_idx + 1) % Config.THEMES.size())
+		var nxt := (theme_idx + 1) % Config.THEMES.size()
+		if nxt == 0:
+			cycle += 1                 # a new loop: from now on the bosses are forged
+		_set_planet(nxt)
 		_start_world()
-		hud.flash(Config.THEME["name"])
+		hud.flash(Config.THEME["name"] + ("\nNEW BOSSES!" if nxt == 0 else ""))
 	if hop_t <= 0.0:
 		hud.fade.color.a = 0.0
 		py = maxf(py, 0.0)
@@ -422,7 +439,7 @@ func _game_over() -> void:
 	state = "over"
 	if test_run >= 0:
 		hud.show_over("Score %d · Coins %d\n%s" % [score(), coins,
-			"%s DEFEATED" % Config.THEMES[test_run]["boss"]["name"] if boss.kills > 0
+			"%s DEFEATED" % Config.THEME["boss"]["name"] if boss.kills > 0
 			else ("%d m left to pass it" % int(boss.dist - boss.done) if boss.phase == "fight" else "Chase not reached")], "Boss test (not saved)")
 		return
 	var s := score()
@@ -980,6 +997,9 @@ func _sim(seconds: float, dt: float) -> float:
 
 ## A simple bot with perfect information and instant reactions: it avoids what needs a lane
 ## change, jumps what can be jumped and slides under bars. Used to check bosses are beatable.
+var _bot_log: Array = []
+
+
 func _bot_drive() -> void:
 	var lethal := {-1: 99.0, 0: 99.0, 1: 99.0}     # nearest "switch lane" hazard per lane
 	var jump_d := 99.0
@@ -1011,10 +1031,14 @@ func _bot_drive() -> void:
 			if blocks:
 				lethal[l] = minf(lethal[l], maxf(near, 0.0))
 			elif l == lane:
-				if it.kind in ["HIGH", "SWEEPHIGH", "VINE"]:
+				if it.kind in ["HIGH", "SWEEPHIGH", "VINE", "SWOOP"]:
 					slide_d = minf(slide_d, near)
 				else:
 					jump_d = minf(jump_d, near)
+	if OS.get_cmdline_user_args().has("--debugfair"):
+		_bot_log.append("lane %d grounded %s ice %s lethal %s jump %.1f slide %.1f" % [lane, grounded, _on_ice(), lethal, jump_d, slide_d])
+		if _bot_log.size() > 40:
+			_bot_log.pop_front()
 	if lethal[lane] < 14.0:
 		var best := lane
 		for l in [-1, 0, 1]:
@@ -1031,13 +1055,26 @@ func _bot_drive() -> void:
 func _autotest_fairness(dt: float) -> void:
 	var saved_core: Dictionary = Progress.core.duplicate()
 	Progress.core["stumble"] = 0
+	# The four hand-made bosses, then a forged boss of every archetype (second loop).
+	var tests := []
 	for i in Config.THEMES.size():
+		tests.append([i, {}])
+	for k in Config.ARCHETYPES.size():
+		tests.append([k % Config.THEMES.size(), Config.forge_boss(k % Config.THEMES.size(), 2, 0, Config.ARCHETYPES[k])])
+	var attempts := 10
+	for a in OS.get_cmdline_user_args():     # --fairboss=K --fairn=N: only test K, N times (debugging)
+		if a.begins_with("--fairboss="):
+			tests = [tests[int(a.substr(11))]]
+		elif a.begins_with("--fairn="):
+			attempts = int(a.substr(8))
+	for test in tests:
+		var i: int = test[0]
 		var wins := 0
 		var deaths := {}
 		var signature_seen := {}
-		for attempt in 10:
+		for attempt in attempts:
 			god = true
-			start_boss_test(i)
+			start_boss_test(i, test[1])
 			var guard := 0
 			while boss.phase != "fight" and guard < 60 * 60:
 				step(dt)
@@ -1052,7 +1089,7 @@ func _autotest_fairness(dt: float) -> void:
 				step(dt)
 				t += dt
 				for it in planet.items:
-					if it.kind in ["ROLLER", "LAVA", "VINE", "ICE", "LEG"] or it.has_meta("decoy_to") or it.has_meta("meteor"):
+					if it.kind in ["ROLLER", "LAVA", "VINE", "ICE", "LEG", "SWOOP"] or it.has_meta("decoy_to") or it.has_meta("meteor"):
 						signature_seen[it.kind + ("(decoy)" if it.has_meta("decoy_to") else "(meteor)" if it.has_meta("meteor") else "")] = true
 				if boss._stomp_t > 0.0 and boss._pending.size() > 0:
 					signature_seen["QUAKE"] = true
@@ -1060,15 +1097,17 @@ func _autotest_fairness(dt: float) -> void:
 				wins += 1
 			else:
 				deaths[last_hit] = deaths.get(last_hit, 0) + 1
-				if i == 2 and OS.get_cmdline_user_args().has("--debugfair"):
+				if OS.get_cmdline_user_args().has("--debugfair"):
 					var near := []
 					for it in planet.items:
 						var dd := _ahead_m(it)
-						if it.alive and it.boss and dd > -6.0 and dd < 30.0 and it.kind != "COIN":
-							near.append("%s x=%.1f d=%.1f fly=%.2f" % [it.kind, it.x, dd, it.fly_t])
-					print("  death: lane %d px %.2f py %.2f speed %.1f | %s" % [lane, px, py, speed, near])
-		print("AUTOTEST fairness %s: bot beat it %d/10, deaths %s, signature moves seen: %s" % [
-			Config.THEMES[i]["boss"]["name"], wins, deaths, ", ".join(signature_seen.keys())])
+						if it.boss and dd > -14.0 and dd < 30.0 and it.kind != "COIN" and it.kind != "MARK":
+							near.append("%s%s x=%.1f d=%.1f fly=%.2f %s" % [it.kind, "" if it.alive else "(gone)", it.x, dd, it.fly_t, it.get_meta_list()])
+					for line in _bot_log.slice(-25):
+						print("    ", line)
+					print("  death (%s, progress %.2f, ahead %.1f, pass %d gate %d): lane %d px %.2f py %.2f vy %.1f slide %.2f | %s" % [Config.THEME["boss"]["name"], boss.progress(), boss.ahead(), boss._pass_state, boss._gate_state, lane, px, py, vy, slide_t, near])
+		print("AUTOTEST fairness %s (%s): bot beat it %d/%d, deaths %s, signature moves seen: %s" % [
+			Config.THEME["boss"]["name"], Config.THEME["boss"]["archetype"], wins, attempts, deaths, ", ".join(signature_seen.keys())])
 	Progress.core = saved_core
 
 

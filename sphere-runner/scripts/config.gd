@@ -64,9 +64,10 @@ const KIND := {
 	"LAVA": {"h": 0.06, "y0": 0.0, "d": 20.0, "color": Color("ff4a1a")},
 	"VINE": {"h": 1.4, "y0": 1.0, "d": 1.2, "color": Color("d940cc")},     # slide under (purple)
 	"ICE": {"h": 0.05, "y0": 0.0, "d": 16.0, "color": Color("9fe8ff")},    # no lane switches while on it
-	"LEG": {"h": 6.5, "y0": 0.0, "d": 3.2, "color": Color("d93333")},      # Gate slam: boss legs on the track
+	"LEG": {"h": 6.5, "y0": 0.0, "d": 3.2, "color": Color("d93333")},
+	"SWOOP": {"h": 4.4, "y0": 1.0, "d": 3.0, "color": Color("d940cc")},  # a flyer swooping low: slide under      # Gate slam: boss legs on the track
 }
-const HAZARDS := ["LOW", "HIGH", "WALL", "MOVER", "PIT", "PLATFORM", "FIST", "BLOCK", "SWEEPLOW", "SWEEPHIGH", "SHOCK", "ROLLER", "LAVA", "VINE", "LEG"]
+const HAZARDS := ["LOW", "HIGH", "WALL", "MOVER", "PIT", "PLATFORM", "FIST", "BLOCK", "SWEEPLOW", "SWEEPHIGH", "SHOCK", "ROLLER", "LAVA", "VINE", "LEG", "SWOOP"]
 const SMASHABLE := ["LOW", "HIGH", "WALL", "MOVER", "FIST", "BLOCK", "SWEEPLOW", "SWEEPHIGH", "SHOCK", "ROLLER", "VINE"]
 const FLOOR_HAZARDS := ["PIT", "LAVA"]   # deadly when your feet touch them
 
@@ -154,7 +155,7 @@ const THEMES := [
 		"laps_to_boss": 2, "boss_loops": 4,
 		"boss": {"name": "SAND WYVERN", "block": "sand_A", "model": "wyvern", "model_h": 13.0, "hover": 9.0, "tint": Color("9a5a32"), "body": Color("c9a060"), "eye": Color("3fe0ff"), "wave": Color("ffd27a"), "glow": 0.0,
 			"throws": {"smash": 38, "block": 10, "sweep_low": 20, "sweep_high": 20, "stomp": 12}, "combo": 0.12, "rate": 0.85,
-			"archetype": "gate_walker", "signature": {"rolling_boulder": 25, "meteor_shower": 18}}},
+			"archetype": "flyer", "signature": {"rolling_boulder": 25, "meteor_shower": 18}}},
 	{"name": "GLACIER", "radius": 54.0, "sky_top": Color("6f9fd8"), "sky_bottom": Color("e6f2fb"),
 		"ground": [Color("f4fbff"), Color("e2eef7"), Color("cfe0ee")], "water": Color("9cc8e8"), "shore": Color.WHITE,
 		"track": Color("5d7ea8"), "curb": Color.WHITE, "dash": Color("e6f6ff"), "glow_road": false,
@@ -163,16 +164,16 @@ const THEMES := [
 		"laps_to_boss": 3, "boss_loops": 4,
 		"boss": {"name": "ICE TITAN", "block": "snow", "model": "ice_golem", "model_h": 20.0, "tint": Color("5fa8dc"), "body": Color("bfe3ff"), "eye": Color("29a0ff"), "wave": Color("9fe8ff"), "glow": 0.15,
 			"throws": {"smash": 32, "block": 20, "sweep_low": 16, "sweep_high": 16, "stomp": 16}, "combo": 0.25, "rate": 0.95,
-			"archetype": "gate_walker", "signature": {"ice_lane": 20, "quake_rhythm": 15, "decoy": 15}}},
+			"archetype": "roller", "signature": {"ice_lane": 20, "quake_rhythm": 15, "decoy": 15}}},
 	{"name": "EMBER", "radius": 30.0, "sky_top": Color("1a1024"), "sky_bottom": Color("5a2a3a"),
 		"ground": [Color("4a3030"), Color("3a2626"), Color("5a3a32")], "water": Color("ff5a1f"), "shore": Color("2a1a1a"),
 		"track": Color("2c2a30"), "curb": Color("ff7a2a"), "dash": Color("ff9a4a"), "glow_road": true,
 		"props": {"volcano": 2, "shard": 4, "f_bare": 3, "f_bare2": 3, "lava": 3, "f_ashrock": 3, "f_ashrock2": 2},
 		"flag": "red",
 		"laps_to_boss": 3, "boss_loops": 5,
-		"boss": {"name": "MAGMA GIANT", "block": "lava", "model": "lava_monster", "model_h": 21.0, "body": Color("3a2a2a"), "eye": Color("ffc400"), "wave": Color("ff7a2a"), "glow": 0.8,
+		"boss": {"name": "MAGMA WYRM", "block": "lava", "model": "lava_monster", "model_h": 21.0, "body": Color("3a2a2a"), "eye": Color("ffc400"), "wave": Color("ff7a2a"), "glow": 0.8,
 			"throws": {"smash": 30, "block": 22, "sweep_low": 15, "sweep_high": 15, "stomp": 18}, "combo": 0.35, "rate": 1.05,
-			"archetype": "gate_walker", "signature": {"lava_trail": 22, "quake_rhythm": 14, "decoy": 16, "gate_slam": 1}}},
+			"archetype": "burrower", "signature": {"lava_trail": 22, "quake_rhythm": 14, "decoy": 16, "gate_slam": 1}}},
 ]
 var THEME: Dictionary = THEMES[0]    # the current planet
 
@@ -180,6 +181,50 @@ var difficulty := "medium"
 var character := "runner"
 var sound := true
 var hero_models := false    # 3D models for heroes and bosses (true) or the block figures (false, the game's style)
+
+
+# --- Boss forge: endless bosses after the fourth planet --------------------------------
+const ARCHETYPES := ["gate_walker", "flyer", "roller", "burrower", "twins"]
+const FORGE_PREFIX := [["MOSS", "THORN", "BRAMBLE", "GROVE"], ["DUNE", "SCORCH", "SUN", "MIRAGE"],
+	["FROST", "RIME", "HAIL", "BLIZZARD"], ["CINDER", "ASH", "MOLTEN", "EMBER"]]
+const FORGE_NOUN := {"gate_walker": ["COLOSSUS", "GOLEM", "BRUTE", "BEHEMOTH"], "flyer": ["WYVERN", "DRAKE", "HARPY", "ROC"],
+	"roller": ["TUMBLER", "BOULDER", "ROLLGUT", "WHEEL"], "burrower": ["WYRM", "BURROWER", "MOLE", "DIGGER"],
+	"twins": ["TWINS", "BROTHERS", "PAIR", "DUO"]}
+## Signature moves each planet can draw from (plus decoy and quake rhythm anywhere).
+const FORGE_POOL := [["vine_sweep", "meteor_shower"], ["rolling_boulder", "meteor_shower"],
+	["ice_lane", "rolling_boulder"], ["lava_trail", "gate_slam"]]
+const FORGE_EYES := [Color("ffe14d"), Color("3fe0ff"), Color("ff4fa3"), Color("7dff4d"), Color("ff7a2a"), Color("c08bff")]
+
+
+## A generated boss for planet i in endless loop `cycle` (1 = the second time round):
+## an archetype, 2-3 signature moves from the planet's pool, a higher threat budget,
+## a name and eye colour. The same planet + cycle + seed always gives the same boss.
+func forge_boss(i: int, cycle: int, seed_extra := 0, force_arch := "") -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7919 * cycle + 104729 * i + seed_extra
+	var b: Dictionary = THEMES[i]["boss"].duplicate(true)
+	var archs := ARCHETYPES.filter(func(x): return x != b["archetype"])   # never the planet's own
+	var a: String = force_arch if force_arch != "" else archs[rng.randi() % archs.size()]
+	var nouns: Array = FORGE_NOUN[a]
+	b["name"] = "%s %s" % [FORGE_PREFIX[i][rng.randi() % 4], nouns[rng.randi() % nouns.size()]]
+	b["archetype"] = a
+	b.erase("model")                       # 3D models are for the hand-made bosses
+	var pool: Array = FORGE_POOL[i] + ["decoy", "quake_rhythm"]
+	if a == "flyer":
+		pool.erase("gate_slam")
+	for k in range(pool.size() - 1, 0, -1):   # seeded shuffle
+		var r := rng.randi() % (k + 1)
+		var tmp: String = pool[k]
+		pool[k] = pool[r]
+		pool[r] = tmp
+	var sig := {}
+	for k in mini(pool.size(), 2 + (1 if cycle >= 2 else 0)):
+		sig[pool[k]] = 1 if pool[k] == "gate_slam" else 14 + rng.randi() % 12
+	b["signature"] = sig
+	b["rate"] = minf(1.6, b["rate"] * (1.0 + 0.12 * cycle))
+	b["combo"] = minf(0.5, b["combo"] + 0.08 * cycle)
+	b["eye"] = FORGE_EYES[rng.randi() % FORGE_EYES.size()]
+	return b
 
 
 func diff() -> Dictionary:
