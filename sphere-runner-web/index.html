@@ -257,80 +257,84 @@ const MAX_LEVEL = 20;
 // XP needed for the next level grows with level^1.5: level 2 after the first run, level 10 after ~40 runs,
 // level 20 after ~74,000 XP (~250 runs of ~300 XP, a few weeks of casual play at ~10 runs a day).
 const xpForNext = (lvl) => Math.round(110 * Math.pow(lvl, 1.5));
-const TIER_REQ = [0, 2, 5, 8];                              // points needed in the branch to open each tier
+const TIER_REQ = [0, 2, 4, 6];                              // points needed in the branch to open each tier
 const heightUp = (s, f) => { s.jumpV *= Math.sqrt(1 + f); }; // jump height scales with velocity squared
+// Ranks: tier 1 has 3, tiers 2 and 3 have 2, the capstone 1 -> 8 points per branch, 24 per tree.
+// Nodes marked boss: true help in the boss chase. Scoring branches have an XP node at tier 2.
 const TREES = {
   runner: [
     { name: 'Flow', color: '#ffd23d', nodes: [
-      { id: 'rhythm', name: 'Rhythm', tier: 0, max: 4, text: r => `Combo window +${(0.3 * r).toFixed(1)} s`, apply: (s, r) => { s.comboTime += 0.3 * r; } },
-      { id: 'shave', name: 'Close Shave', tier: 1, max: 3, text: r => `Close calls count from ${35 + 8 * r} cm (was 35) and give +${10 * r} points`, apply: (s, r) => { s.nearMiss += 0.08 * r; s.closeBonus += 10 * r; } },
-      { id: 'chain', name: 'Chain Master', tier: 2, max: 3, text: r => `Combo goes up a level every ${10 - r} pickups (was 10)`, apply: (s, r) => { s.comboStep = 10 - r; } },
+      { id: 'rhythm', name: 'Rhythm', tier: 0, max: 3, text: r => `Combo window +${(0.4 * r).toFixed(1)} s`, apply: (s, r) => { s.comboTime += 0.4 * r; } },
+      { id: 'showtime', name: 'Showtime', tier: 1, max: 2, xp: true, text: r => `+${5 * r}% XP; close calls give +${10 * r} points`, apply: (s, r) => { s.xpMul += 0.05 * r; s.closeBonus += 10 * r; } },
+      { id: 'chain', name: 'Chain Master', tier: 2, max: 2, text: r => `Combo goes up a level every ${9 - r} pickups (was 10)`, apply: (s, r) => { s.comboStep = 9 - r; } },
       { id: 'crescendo', name: 'Crescendo', tier: 3, max: 1, text: () => 'Combo can reach x6 (was x5)', apply: s => { s.comboCap = 6; } },
     ] },
     { name: 'Agility', color: '#7fd4ff', nodes: [
-      { id: 'quickfeet', name: 'Quick Feet', tier: 0, max: 4, text: r => `Lane switches ${6 * r}% faster`, apply: (s, r) => { s.laneMul *= 1 + 0.06 * r; } },
-      { id: 'aircontrol', name: 'Air Control', tier: 1, max: 3, text: r => `Air dash ${25 * r}% faster, float +${(0.1 * r).toFixed(1)} s`, apply: (s, r) => { s.airDashMul *= 1 + 0.25 * r; s.floatTime += 0.1 * r; } },
-      { id: 'spring', name: 'Spring', tier: 2, max: 3, text: r => `Jump ${5 * r}% higher`, apply: (s, r) => heightUp(s, 0.05 * r) },
-      { id: 'djump', name: 'Double Jump', tier: 3, max: 1, text: () => 'Swipe up again in mid-air to jump once more', apply: s => { s.doubleJump = true; } },
+      { id: 'quickfeet', name: 'Quick Feet', tier: 0, max: 3, text: r => `Lane switches ${8 * r}% faster`, apply: (s, r) => { s.laneMul *= 1 + 0.08 * r; } },
+      { id: 'aircontrol', name: 'Air Control', tier: 1, max: 2, text: r => `Air dash ${35 * r}% faster, float +${(0.15 * r).toFixed(2)} s`, apply: (s, r) => { s.airDashMul *= 1 + 0.35 * r; s.floatTime += 0.15 * r; } },
+      { id: 'spring', name: 'Spring', tier: 2, max: 2, text: r => `Jump ${7 * r}% higher`, apply: (s, r) => heightUp(s, 0.07 * r) },
+      { id: 'slipstream', name: 'Slipstream', tier: 3, max: 1, text: () => 'After a close call: 1.5 s of 20% faster lane switches', apply: s => { s.slipstream = true; } },
     ] },
     { name: 'Focus', color: '#8fa2ff', nodes: [
-      { id: 'charge', name: 'Charge', tier: 0, max: 4, text: r => `Meter fills ${10 * r}% faster`, apply: (s, r) => { s.meterMul *= 1 + 0.1 * r; } },
-      { id: 'readthrow', name: 'Read the Throw', tier: 1, max: 3, boss: true, text: r => `Focus +${(0.3 * r).toFixed(1)} s; boss throws land ${2 * r} m further ahead (more warning)`, apply: (s, r) => { s.abilityTime += 0.3 * r; s.throwLead += 2 * r; } },
-      { id: 'still', name: 'Stillness', tier: 2, max: 3, text: r => `Focus slows the game to ${45 - 4 * r}% speed (was 45%)`, apply: (s, r) => { s.focusSlow = 0.45 - 0.04 * r; } },
+      { id: 'charge', name: 'Charge', tier: 0, max: 3, text: r => `Meter fills ${13 * r}% faster`, apply: (s, r) => { s.meterMul *= 1 + 0.13 * r; } },
+      { id: 'readthrow', name: 'Read the Throw', tier: 1, max: 2, boss: true, text: r => `Focus +${(0.45 * r).toFixed(2)} s; boss throws land ${3 * r} m further ahead (more warning)`, apply: (s, r) => { s.abilityTime += 0.45 * r; s.throwLead += 3 * r; } },
+      { id: 'still', name: 'Stillness', tier: 2, max: 2, text: r => `Focus slows the game to ${45 - 6 * r}% speed (was 45%)`, apply: (s, r) => { s.focusSlow = 0.45 - 0.06 * r; } },
       { id: 'field', name: 'Focus Field', tier: 3, max: 1, text: () => 'During Focus, nearby coins fly to you', apply: s => { s.focusMagnet = true; } },
     ] },
   ],
   smasher: [
     { name: 'Demolition', color: '#ff8a2a', nodes: [
-      { id: 'fuel', name: 'Fuel', tier: 0, max: 4, text: r => `Meter fills ${8 * r}% faster`, apply: (s, r) => { s.meterMul *= 1 + 0.08 * r; } },
-      { id: 'wreck', name: 'Wrecking Ball', tier: 1, max: 3, boss: true, text: r => `Each smash adds ${(0.4 + 0.1 * r).toFixed(1)} s (was 0.4); during Smash, boss throws aimed at you shatter in mid-air`, apply: (s, r) => { s.smashExtend += 0.1 * r; s.wreck = true; } },
-      { id: 'overdrive', name: 'Overdrive', tier: 2, max: 3, text: r => `Smash can last up to ${(5 + 0.5 * r).toFixed(1)} s (was 5)`, apply: (s, r) => { s.abilityMax += 0.5 * r; } },
+      { id: 'fuel', name: 'Fuel', tier: 0, max: 3, text: r => `Meter fills ${11 * r}% faster`, apply: (s, r) => { s.meterMul *= 1 + 0.11 * r; } },
+      { id: 'wreck', name: 'Wrecking Ball', tier: 1, max: 2, boss: true, text: r => `Each smash adds ${(0.4 + 0.15 * r).toFixed(2)} s (was 0.4); during Smash, boss throws aimed at you shatter in mid-air`, apply: (s, r) => { s.smashExtend += 0.15 * r; s.wreck = true; } },
+      { id: 'overdrive', name: 'Overdrive', tier: 2, max: 2, text: r => `Smash can last up to ${(5 + 0.75 * r).toFixed(2)} s (was 5)`, apply: (s, r) => { s.abilityMax += 0.75 * r; } },
       { id: 'aftershock', name: 'Aftershock', tier: 3, max: 1, text: () => 'When Smash ends, a blast clears every block in the next 10 m', apply: s => { s.aftershock = true; } },
     ] },
     { name: 'Bulk', color: '#aab6cc', nodes: [
-      { id: 'legs', name: 'Power Legs', tier: 0, max: 4, text: r => `Jump ${5 * r}% higher`, apply: (s, r) => heightUp(s, 0.05 * r) },
-      { id: 'pound', name: 'Ground Pound', tier: 1, max: 3, text: r => `Slam down ${15 * r}% faster`, apply: (s, r) => { s.slamMul *= 1 + 0.15 * r; } },
-      { id: 'sprinter', name: 'Sprinter', tier: 2, max: 3, text: r => `Lane switches ${5 * r}% faster`, apply: (s, r) => { s.laneMul *= 1 + 0.05 * r; } },
+      { id: 'legs', name: 'Power Legs', tier: 0, max: 3, text: r => `Jump ${7 * r}% higher`, apply: (s, r) => heightUp(s, 0.07 * r) },
+      { id: 'pound', name: 'Ground Pound', tier: 1, max: 2, text: r => `Slam down ${22 * r}% faster`, apply: (s, r) => { s.slamMul *= 1 + 0.22 * r; } },
+      { id: 'sprinter', name: 'Sprinter', tier: 2, max: 2, text: r => `Lane switches ${7 * r}% faster`, apply: (s, r) => { s.laneMul *= 1 + 0.07 * r; } },
       { id: 'ram', name: 'Battering Ram', tier: 3, max: 1, text: () => 'Sliding into a crate breaks it instead of stopping you', apply: s => { s.ram = true; } },
     ] },
     { name: 'Plunder', color: '#ffd23d', nodes: [
-      { id: 'scrap', name: 'Scrap Value', tier: 0, max: 4, text: r => `Smashed blocks give +${5 * r} points`, apply: (s, r) => { s.smashPts += 5 * r; } },
-      { id: 'crusher', name: 'Coin Crusher', tier: 1, max: 3, text: r => `Coins worth ${10 * r}% more`, apply: (s, r) => { s.coinMul *= 1 + 0.1 * r; } },
-      { id: 'rampage', name: 'Rampage', tier: 2, max: 3, text: r => `Each smash adds +${r} extra combo`, apply: (s, r) => { s.smashCombo += r; } },
+      { id: 'scrap', name: 'Scrap Value', tier: 0, max: 3, text: r => `Smashed blocks give +${7 * r} points`, apply: (s, r) => { s.smashPts += 7 * r; } },
+      { id: 'salvage', name: 'Salvage', tier: 1, max: 2, xp: true, text: r => `+${5 * r}% XP; coins worth ${15 * r}% more`, apply: (s, r) => { s.xpMul += 0.05 * r; s.coinMul *= 1 + 0.15 * r; } },
+      { id: 'rampage', name: 'Rampage', tier: 2, max: 2, text: r => `Each smash adds +${r} extra combo`, apply: (s, r) => { s.smashCombo += r; } },
       { id: 'jackpot', name: 'Jackpot', tier: 3, max: 1, text: () => 'Every smashed block also gives 3 coins', apply: s => { s.jackpot = true; } },
     ] },
   ],
   jumper: [
     { name: 'Skyward', color: '#8dff7a', nodes: [
-      { id: 'springlegs', name: 'Spring Legs', tier: 0, max: 4, text: r => `Jump ${4 * r}% higher`, apply: (s, r) => heightUp(s, 0.04 * r) },
-      { id: 'glider', name: 'Glider', tier: 1, max: 3, text: r => `Float +${(0.12 * r).toFixed(2)} s`, apply: (s, r) => { s.floatTime += 0.12 * r; } },
-      { id: 'quickland', name: 'Quick Landing', tier: 2, max: 3, text: r => `Slam down ${15 * r}% faster`, apply: (s, r) => { s.slamMul *= 1 + 0.15 * r; } },
+      { id: 'springlegs', name: 'Spring Legs', tier: 0, max: 3, text: r => `Jump ${5 * r}% higher`, apply: (s, r) => heightUp(s, 0.05 * r) },
+      { id: 'glider', name: 'Glider', tier: 1, max: 2, text: r => `Float +${(0.18 * r).toFixed(2)} s`, apply: (s, r) => { s.floatTime += 0.18 * r; } },
+      { id: 'quickland', name: 'Quick Landing', tier: 2, max: 2, text: r => `Slam down ${22 * r}% faster`, apply: (s, r) => { s.slamMul *= 1 + 0.22 * r; } },
       { id: 'djump2', name: 'Double Jump', tier: 3, max: 1, text: () => 'Swipe up again in mid-air to jump once more', apply: s => { s.doubleJump = true; } },
     ] },
     { name: 'Leap', color: '#d4ff3d', nodes: [
-      { id: 'windup', name: 'Wind Up', tier: 0, max: 4, text: r => `Meter fills ${8 * r}% faster`, apply: (s, r) => { s.meterMul *= 1 + 0.08 * r; } },
-      { id: 'vault', name: 'Vault', tier: 1, max: 3, boss: true, text: r => `Jumping a boss throw or stomp wave fills ${5 * r}% meter, a crate ${2 * r}%`, apply: (s, r) => { s.vaultBoss += 0.05 * r; s.vaultCrate += 0.02 * r; } },
-      { id: 'hang', name: 'Hang Time', tier: 2, max: 3, text: r => `Hover ${(0.25 * r).toFixed(2)} s at the top of a super jump`, apply: (s, r) => { s.hangTime += 0.25 * r; } },
+      { id: 'windup', name: 'Wind Up', tier: 0, max: 3, text: r => `Meter fills ${11 * r}% faster`, apply: (s, r) => { s.meterMul *= 1 + 0.11 * r; } },
+      { id: 'vault', name: 'Vault', tier: 1, max: 2, boss: true, text: r => `Jumping a boss throw or stomp wave fills ${7 * r}% meter, a crate ${3 * r}%`, apply: (s, r) => { s.vaultBoss += 0.07 * r; s.vaultCrate += 0.03 * r; } },
+      { id: 'hang', name: 'Hang Time', tier: 2, max: 2, text: r => `Hover ${(0.35 * r).toFixed(2)} s at the top of a super jump`, apply: (s, r) => { s.hangTime += 0.35 * r; } },
       { id: 'meteor', name: 'Meteor', tier: 3, max: 1, text: () => 'Landing from a super jump smashes the blocks just ahead', apply: s => { s.meteor = true; } },
     ] },
     { name: 'Aerial', color: '#7df9ff', nodes: [
-      { id: 'daredevil', name: 'Daredevil', tier: 0, max: 4, text: r => `Close calls give +${6 * r} points`, apply: (s, r) => { s.closeBonus += 6 * r; } },
-      { id: 'highroller', name: 'High Roller', tier: 1, max: 3, text: r => `Coins caught in the air worth ${20 * r}% more`, apply: (s, r) => { s.airCoinMul *= 1 + 0.2 * r; } },
-      { id: 'windrider', name: 'Wind Rider', tier: 2, max: 3, text: r => `Combo window +${(0.25 * r).toFixed(2)} s`, apply: (s, r) => { s.comboTime += 0.25 * r; } },
+      { id: 'daredevil', name: 'Daredevil', tier: 0, max: 3, text: r => `Close calls give +${8 * r} points`, apply: (s, r) => { s.closeBonus += 8 * r; } },
+      { id: 'flyer', name: 'Frequent Flyer', tier: 1, max: 2, xp: true, text: r => `+${5 * r}% XP; coins caught in the air worth ${30 * r}% more`, apply: (s, r) => { s.xpMul += 0.05 * r; s.airCoinMul *= 1 + 0.3 * r; } },
+      { id: 'windrider', name: 'Wind Rider', tier: 2, max: 2, text: r => `Combo window +${(0.35 * r).toFixed(2)} s`, apply: (s, r) => { s.comboTime += 0.35 * r; } },
       { id: 'updraft', name: 'Updraft', tier: 3, max: 1, text: () => 'Close calls while in the air add 10% to the meter', apply: s => { s.updraft = true; } },
     ] },
   ],
 };
-
-const RENAMED = { deep: 'readthrow', momentum: 'wreck', shockwave: 'aftershock', strato: 'vault' };
+const TREE_POINTS = 24, BRANCH_POINTS = 8;
+// Skill points: one per level from 2 to 8 (early hook), then one every second level -> 13 at level 20.
+const pointsAtLevel = (lvl) => Math.min(lvl, 8) - 1 + Math.max(0, Math.floor((lvl - 8) / 2));
+const PROG_VERSION = 2;   // v2 = bigger ranks and new tree layout: earlier allocations are refunded
 function loadProg(c) {
-  const p = store.get('prog_' + c, null) || { lvl: 1, xp: 0, alloc: {} };
-  for (const [o, n] of Object.entries(RENAMED)) if (p.alloc[o]) { p.alloc[n] = (p.alloc[n] || 0) + p.alloc[o]; delete p.alloc[o]; }
+  const p = store.get('prog_' + c, null) || { lvl: 1, xp: 0, alloc: {}, v: PROG_VERSION };
+  if (p.v !== PROG_VERSION) { p.alloc = {}; p.v = PROG_VERSION; p.refunded = true; store.set('prog_' + c, p); }
   return p;
 }
 function saveProg(c, p) { store.set('prog_' + c, p); }
 const spentPoints = p => Object.values(p.alloc).reduce((a, b) => a + b, 0);
-const freePoints = p => (p.lvl - 1) - spentPoints(p);
+const freePoints = p => pointsAtLevel(p.lvl) - spentPoints(p);
 const branchPoints = (p, br) => br.nodes.reduce((a, n) => a + (p.alloc[n.id] || 0), 0);
 const canLearn = (p, br, n) => freePoints(p) > 0 && (p.alloc[n.id] || 0) < n.max && branchPoints(p, br) >= TIER_REQ[n.tier];
 
@@ -341,7 +345,7 @@ function computeStats(c = opts.char) {
     nearMiss: 0, closeBonus: 0, meterMul: d.meterMul || 1, abilityTime: d.abilityTime, abilityMax: d.abilityMax || d.abilityTime,
     smashExtend: d.smashExtend || 0, focusSlow: 0.45, focusMagnet: false, airDashMul: 1, doubleJump: false, slamMul: 1,
     shockwave: false, ram: false, smashPts: 0, coinMul: 1, smashCombo: 0, jackpot: false, superMul: 1, hangTime: 0,
-    meteor: false, airCoinMul: 1, updraft: false, throwLead: 0, wreck: false, aftershock: false, vaultBoss: 0, vaultCrate: 0 };
+    meteor: false, airCoinMul: 1, updraft: false, xpMul: 1, slipstream: false, throwLead: 0, wreck: false, aftershock: false, vaultBoss: 0, vaultCrate: 0 };
   const p = loadProg(c);
   for (const br of TREES[c]) for (const n of br.nodes) { const r = p.alloc[n.id] || 0; if (r) n.apply(s, r); }
   s.abilityMax = Math.max(s.abilityMax, s.abilityTime);
@@ -1376,7 +1380,7 @@ let coins = 0, lap = 0, hitT = 0, shake = 0, squash = 0, pts = 0, closeCalls = 0
 let flashT = 0, popT = 0;
 let combo = 0, comboT = 0, comboLevel = 1, floatT = 0, holding = false, dashT = 0;
 let meter = 0, abilityT = 0, abilityTotal = 0, lastTap = 0;
-let airJumps = 0, superActive = false, hangUsed = 0, smashes = 0;
+let airJumps = 0, superActive = false, hangUsed = 0, smashes = 0, slipT = 0;
 let waveLeft = 0, calmLeft = 0, hopT = 0, hopSwapped = false, themeIdx = 0;
 const pw = { magnet: 0, shield: 0, orbit: 0, x2: 0, invuln: 0 };
 
@@ -1453,7 +1457,7 @@ function gameOver() {
   $('overStats').innerHTML = `Score <b>${s}</b>${isBest ? ' &nbsp;NEW BEST!' : ''}<br>Best ${Math.max(s, best)}<br>` +
     `Laps ${lap} &nbsp;·&nbsp; Coins ${coins}<br>Distance ${Math.floor(dist)} m &nbsp;·&nbsp; Close calls ${closeCalls}<br>Bosses defeated ${bossKills}` +
     `<div style="margin-top:12px;font-size:16px"><b>+${aw.xp} XP</b> &nbsp;·&nbsp; ${CHARS[opts.char].name} Lv ${aw.p.lvl}` +
-    (aw.levels ? `<div style="color:#ffd23d;font-weight:900;margin-top:4px">LEVEL UP! +${aw.levels} skill point${aw.levels > 1 ? 's' : ''}</div>` : '') +
+    (aw.levels ? `<div style="color:#ffd23d;font-weight:900;margin-top:4px">LEVEL UP!${aw.points ? ` +${aw.points} skill point${aw.points > 1 ? 's' : ''}` : ' (next skill point at the next level)'}</div>` : '') +
     (aw.p.lvl < MAX_LEVEL ? `<div class="xpbar" style="margin-top:6px"><div style="width:${100 * aw.p.xp / xpForNext(aw.p.lvl)}%"></div></div>` : '') + '</div>';
   $('overSkills').textContent = freePoints(aw.p) > 0 ? `Skill tree (${freePoints(aw.p)} point${freePoints(aw.p) > 1 ? 's' : ''} to spend)` : 'Skill tree';
   show('over');
@@ -1461,14 +1465,15 @@ function gameOver() {
 }
 
 function awardXP() {
-  const xp = Math.floor(dist / 4) + coins * 2 + closeCalls * 5 + smashes * 3 + bossKills * 250;
+  const base = Math.floor(dist / 4) + coins * 2 + closeCalls * 5 + smashes * 3 + bossKills * 250;
+  const xp = Math.round(base * computeStats(opts.char).xpMul);
   const p = loadProg(opts.char), before = p.lvl;
   p.xp += xp;
   while (p.lvl < MAX_LEVEL && p.xp >= xpForNext(p.lvl)) { p.xp -= xpForNext(p.lvl); p.lvl++; }
   if (p.lvl >= MAX_LEVEL) p.xp = 0;
   saveProg(opts.char, p);
   if (p.lvl > before) sfx.levelup();
-  return { xp, levels: p.lvl - before, p };
+  return { xp, levels: p.lvl - before, points: pointsAtLevel(p.lvl) - pointsAtLevel(before), p };
 }
 
 function flash(text) { const f = $('flash'); f.textContent = text; f.style.opacity = 1; flashT = 1.2; }
@@ -1518,6 +1523,7 @@ function step(dt) {
 
   if (comboT > 0) { comboT -= dt; if (comboT <= 0) { combo = 0; comboLevel = 1; } }
   if (dashT > 0) dashT -= dt;
+  if (slipT > 0) slipT -= dt;
   if (hopT > 0) updateHop(dt);
 
   // Power-up timers
@@ -1558,7 +1564,7 @@ function surfaceUnderPlayer() {
 }
 
 function movePlayer(dt) {
-  px = moveToward(px, lane * LANE_W, LANE_SPEED * ST.laneMul * (dashT > 0 ? 2 * ST.airDashMul : 1) * dt);
+  px = moveToward(px, lane * LANE_W, LANE_SPEED * ST.laneMul * (slipT > 0 ? 1.2 : 1) * (dashT > 0 ? 2 * ST.airDashMul : 1) * dt);
   if (hopT > 0) return;
   if (pw.orbit > 0) {
     // Float high above the globe.
@@ -1628,6 +1634,7 @@ function collide(dt) {
         if (it.minClear < NEAR_MISS + ST.nearMiss && it.minClear > -0.3 && pw.orbit <= 0) {
           closeCalls++; const b = Math.round((25 + ST.closeBonus) * mult() * comboMult()); pts += b; addCombo(3); pop('CLOSE! +' + b); sfx.close();
           if (ST.updraft && !grounded) meter = Math.min(1, meter + 0.1);
+          if (ST.slipstream) slipT = 1.5;
         }
       }
     }
@@ -2047,10 +2054,10 @@ function renderSkills() {
   $('skTitle').textContent = `${def.name} · Lv ${p.lvl}`;
   $('skPts').innerHTML = `<b style="color:${fp ? '#ffd23d' : '#fff'}">${fp}</b> pt${fp === 1 ? '' : 's'} free`;
   $('skXp').innerHTML = p.lvl >= MAX_LEVEL ? 'Max level reached' :
-    `<div class="xpbar"><div style="width:${100 * p.xp / xpForNext(p.lvl)}%"></div></div>${p.xp} / ${xpForNext(p.lvl)} XP to level ${p.lvl + 1} · ${spentPoints(p)} of 33 tree points used`;
+    `<div class="xpbar"><div style="width:${100 * p.xp / xpForNext(p.lvl)}%"></div></div>${p.xp} / ${xpForNext(p.lvl)} XP to level ${p.lvl + 1} · ${spentPoints(p)} of ${TREE_POINTS} tree points used`;
   $('skTree').innerHTML = TREES[c].map(br => {
     const bp = branchPoints(p, br);
-    return `<div class="branch"><div class="bname" style="color:${br.color}">${br.name} <small>${bp}/11</small></div>` +
+    return `<div class="branch"><div class="bname" style="color:${br.color}">${br.name} <small>${bp}/${BRANCH_POINTS}</small></div>` +
       br.nodes.map(n => {
         const rk = p.alloc[n.id] || 0, locked = bp < TIER_REQ[n.tier];
         const pips = Array.from({ length: n.max }, (_, i) => `<i style="${i < rk ? 'background:' + br.color : ''}"></i>`).join('');
@@ -2067,7 +2074,7 @@ function renderSkills() {
     $('skLearn').disabled = !canLearn(p, f.br, f.n);
     $('skLearn').textContent = rk >= f.n.max ? 'Fully learned' : 'Learn (1 point)';
   } else {
-    $('skDetail').innerHTML = '<span style="opacity:.75">Tap a skill to see what it does. Each level gives 1 point; there are 33 points of skills and you get 19 by level 20, so choose a style. Higher tiers open once you have 2, 5 and 8 points in a branch.</span>';
+    $('skDetail').innerHTML = '<span style="opacity:.75">Tap a skill to see what it does. You get a skill point every level up to 8, then every second level: 13 by level 20, for a tree of 24, so choose a style. Higher tiers open once you have 2, 4 and 6 points in a branch.' + (loadProg(opts.char).refunded ? '<br><b style="color:#ffd23d">The tree was rebuilt with bigger ranks: your points were refunded.</b>' : '') + '</span>';
     $('skLearn').disabled = true; $('skLearn').textContent = 'Learn';
   }
 }
@@ -2075,7 +2082,7 @@ $('skTree').addEventListener('click', e => { const b = e.target.closest('.node')
 $('skLearn').addEventListener('click', () => {
   const p = loadProg(opts.char), f = findNode(skSel);
   if (!f || !canLearn(p, f.br, f.n)) return;
-  p.alloc[f.n.id] = (p.alloc[f.n.id] || 0) + 1; saveProg(opts.char, p); sfx.learn(); renderSkills();
+  p.alloc[f.n.id] = (p.alloc[f.n.id] || 0) + 1; delete p.refunded; saveProg(opts.char, p); sfx.learn(); renderSkills();
 });
 $('skReset').addEventListener('click', () => { const p = loadProg(opts.char); p.alloc = {}; saveProg(opts.char, p); renderSkills(); });
 $('skLevel').addEventListener('click', () => { const p = loadProg(opts.char); if (p.lvl < MAX_LEVEL) { p.lvl++; p.xp = 0; } saveProg(opts.char, p); renderSkills(); });

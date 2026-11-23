@@ -11,11 +11,10 @@ Separate from the per-character skill trees (which stay about play style). See d
 - **Dropped**: Head start, Reflexes, Quick recovery.
 - Prices 100/200/400/700/1100 per level (Stumble guard 400/900/1500); coins saved between runs.
 
-## Skill tree open decisions
-(Done: boss nodes Read the Throw / Wrecking Ball / Vault; Aftershock replaced Shockwave.)
-- A: Double Jump Jumper-only; Runner capstone Slipstream instead.
-- B: XP tier in the scoring branches.
-- D: fewer, bigger ranks.
+## Skill tree (settled)
+Double Jump Jumper-only (Runner capstone: Slipstream); XP node at tier 2 of each scoring branch;
+boss nodes at tier 2 of each ability branch; Aftershock replaced Shockwave; bigger ranks (3/2/2/1,
+8 per branch, 24 per tree) with 13 skill points by level 20. See docs/progression.html.
 
 ## Retention
 - First-run-of-the-day bonus (e.g. double XP on the first 3 runs each day).
