@@ -9,6 +9,7 @@ signal menu_pressed
 signal pause_pressed
 signal character_changed
 signal boss_test(index: int)
+signal progress_changed       # skills or shop changed: main recomputes stats
 
 var score_label: Label
 var info_label: Label
@@ -34,6 +35,14 @@ var boss_box: VBoxContainer
 var boss_name: Label
 var boss_fill: ColorRect
 var boss_sub: Label
+var skills_panel: PanelContainer
+var shop_panel: PanelContainer
+var stats_label: Label
+var _sk_sel := Vector2i(-1, -1)   # selected node: (branch, tier)
+var _sk_return := "menu"
+var _sh_return := "menu"
+var _sk_box: VBoxContainer
+var _sh_box: VBoxContainer
 var _flash_t := 0.0
 var _pop_t := 0.0
 
@@ -66,6 +75,14 @@ func _ready() -> void:
 	fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_menu()
 	_build_over()
+	var sp := _panel()
+	skills_panel = sp[0]
+	_sk_box = sp[1]
+	var hp := _panel()
+	shop_panel = hp[0]
+	_sh_box = hp[1]
+	skills_panel.visible = false
+	shop_panel.visible = false
 	show_menu()
 
 
@@ -229,6 +246,21 @@ func _build_menu() -> void:
 		char_buttons[c] = b
 	char_desc = _text(box, "", 21)
 	char_desc.custom_minimum_size = Vector2(536, 0)
+	var prow := HBoxContainer.new()
+	prow.add_theme_constant_override("separation", 10)
+	box.add_child(prow)
+	var sk := _button(prow, "Skill tree", Color("8a5cf6"))
+	sk.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sk.custom_minimum_size = Vector2(0, 64)
+	sk.add_theme_font_size_override("font_size", 24)
+	sk.pressed.connect(open_skills.bind("menu"))
+	var sh := _button(prow, "Core shop", Color("b8860b"))
+	sh.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sh.custom_minimum_size = Vector2(0, 64)
+	sh.add_theme_font_size_override("font_size", 24)
+	sh.pressed.connect(open_shop.bind("menu"))
+	char_buttons["_skills"] = sk
+	char_buttons["_shop"] = sh
 	_text(box, "Difficulty", 26)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
@@ -265,17 +297,22 @@ func _build_menu() -> void:
 		b.add_theme_font_size_override("font_size", 22)
 		b.pressed.connect(func(): boss_test.emit(i))
 		brow.add_child(b)
+	stats_label = _text(box, "", 18)
+	stats_label.modulate = Color(1, 1, 1, 0.75)
 
 
 func _set_difficulty(d: String) -> void:
 	Config.difficulty = d
+	if stats_label:
+		Progress.save()
+		_refresh_menu()
 	for k in diff_buttons:
 		diff_buttons[k].button_pressed = k == d
 
 
 func _set_character(c: String, emit := true) -> void:
 	Config.character = c
-	for k in char_buttons:
+	for k in Config.CHARS:
 		char_buttons[k].modulate = Color.WHITE if k == c else Color(1, 1, 1, 0.45)
 	char_desc.text = Config.CHARS[c]["desc"] + " Double-tap when the meter is full."
 	if emit:
@@ -289,10 +326,33 @@ func _build_over() -> void:
 	over_title = _text(box, "Crashed", 48)
 	over_text = _text(box, "", 28)
 	_button(box, "Run again", Color("3d8bff")).pressed.connect(func(): again_pressed.emit())
+	var orow := HBoxContainer.new()
+	orow.add_theme_constant_override("separation", 10)
+	box.add_child(orow)
+	var osk := _button(orow, "Skill tree", Color("8a5cf6"))
+	osk.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	osk.pressed.connect(open_skills.bind("over"))
+	var osh := _button(orow, "Core shop", Color("b8860b"))
+	osh.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	osh.pressed.connect(open_shop.bind("over"))
 	_button(box, "Menu", Color(1, 1, 1, 0.15)).pressed.connect(func(): menu_pressed.emit())
 
 
+func _refresh_menu() -> void:
+	for c in Config.CHARS:
+		var p: Dictionary = Progress.prog[c]
+		var fp := Progress.free_points(c)
+		char_buttons[c].text = "%s\nLv %d%s" % [Config.CHARS[c]["name"], p["lvl"], " · %d pt" % fp if fp > 0 else ""]
+	var fp2 := Progress.free_points(Config.character)
+	char_buttons["_skills"].text = "Skill tree (%d)" % fp2 if fp2 > 0 else "Skill tree"
+	char_buttons["_shop"].text = "Core shop (%d)" % Progress.wallet
+	stats_label.text = "Last 10 runs, %s:\n%s" % [Config.difficulty, Progress.stats_table()]
+
+
 func show_menu(best := 0) -> void:
+	_refresh_menu()
+	skills_panel.visible = false
+	shop_panel.visible = false
 	menu_panel.visible = true
 	over_panel.visible = false
 	pause_button.visible = false
@@ -335,3 +395,169 @@ func _process(delta: float) -> void:
 		_pop_t -= delta
 		if _pop_t <= 0.0:
 			pop_label.text = ""
+
+
+# =====================================================================
+# Skill tree
+# =====================================================================
+
+func open_skills(from: String) -> void:
+	_sk_return = from
+	_sk_sel = Vector2i(-1, -1)
+	menu_panel.visible = false
+	over_panel.visible = false
+	skills_panel.visible = true
+	_render_skills()
+
+
+func _close_overlay(panel: PanelContainer, back: String) -> void:
+	panel.visible = false
+	progress_changed.emit()
+	if back == "menu":
+		_refresh_menu()
+		menu_panel.visible = true
+	else:
+		over_panel.visible = true
+
+
+func _clear(box: Container) -> void:
+	for c in box.get_children():
+		box.remove_child(c)
+		c.queue_free()
+
+
+func _small_button(parent: Control, text: String, color: Color, size := 22) -> Button:
+	var b := _button(parent, text, color)
+	b.custom_minimum_size = Vector2(0, 60)
+	b.add_theme_font_size_override("font_size", size)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return b
+
+
+func _render_skills() -> void:
+	_clear(_sk_box)
+	var c := Config.character
+	var p: Dictionary = Progress.prog[c]
+	_text(_sk_box, "%s · Lv %d · %d point%s free" % [Config.CHARS[c]["name"], p["lvl"], Progress.free_points(c), "" if Progress.free_points(c) == 1 else "s"], 32)
+	var xp_line := "Max level" if p["lvl"] >= Progress.MAX_LEVEL else "%d / %d XP to level %d" % [p["xp"], Progress.xp_for_next(p["lvl"]), p["lvl"] + 1]
+	_text(_sk_box, "%s · %d of %d tree points used" % [xp_line, Progress.spent(c), Progress.TREE_POINTS], 20)
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 8)
+	_sk_box.add_child(grid)
+	var tree: Array = Progress.TREES[c]
+	for b in 3:
+		var hl := Label.new()
+		hl.text = "%s %d/%d" % [tree[b][0], Progress.branch_points(c, b), Progress.BRANCH_POINTS]
+		hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		hl.add_theme_font_size_override("font_size", 22)
+		hl.add_theme_color_override("font_color", Color(tree[b][1]))
+		grid.add_child(hl)
+	for tier in 4:
+		for b in 3:
+			var id: String = tree[b][2][tier]
+			var rank: int = p["alloc"].get(id, 0)
+			var mr := Progress.max_rank(tier)
+			var locked: bool = Progress.branch_points(c, b) < Progress.TIER_REQ[tier]
+			var pips := ""
+			for i in mr:
+				pips += "■" if i < rank else "□"
+			var tag := "  BOSS" if id in Progress.BOSS_NODES else "  XP" if id in Progress.XP_NODES else ""
+			var btn := Button.new()
+			btn.text = "%s\n%s%s%s" % [Progress.NODE_NAMES[id], pips, tag, "\n(%d in branch)" % Progress.TIER_REQ[tier] if locked else ""]
+			btn.custom_minimum_size = Vector2(196, 96)
+			btn.add_theme_font_size_override("font_size", 19)
+			var sb := StyleBoxFlat.new()
+			sb.bg_color = Color(tree[b][1]).darkened(0.65) if not locked else Color(0.2, 0.22, 0.28)
+			sb.set_corner_radius_all(12)
+			sb.border_color = Color.WHITE if _sk_sel == Vector2i(b, tier) else Color(tree[b][1]) if Progress.can_learn(c, b, tier) else Color(1, 1, 1, 0.1)
+			sb.set_border_width_all(3 if _sk_sel == Vector2i(b, tier) else 2)
+			if tier == 3:
+				sb.set_border_width_all(4)
+			btn.add_theme_stylebox_override("normal", sb)
+			btn.add_theme_stylebox_override("hover", sb)
+			btn.add_theme_stylebox_override("pressed", sb)
+			btn.modulate = Color(1, 1, 1, 0.5) if locked else Color.WHITE
+			btn.pressed.connect(func():
+				_sk_sel = Vector2i(b, tier)
+				_render_skills())
+			grid.add_child(btn)
+	var detail := "Tap a skill to see what it does. A skill point every level up to 8, then every second level (13 by level 20), for a tree of 24: choose a style. Tiers open at 2, 4 and 6 points in a branch. BOSS = helps in the boss chase, XP = faster levelling."
+	if _sk_sel.x >= 0:
+		var id: String = tree[_sk_sel.x][2][_sk_sel.y]
+		var rank: int = p["alloc"].get(id, 0)
+		var mr := Progress.max_rank(_sk_sel.y)
+		detail = "%s · rank %d/%d%s\n" % [Progress.NODE_NAMES[id], rank, mr, " · capstone" if _sk_sel.y == 3 else ""]
+		if rank > 0:
+			detail += "Now: %s\n" % Progress.describe(id, rank)
+		detail += ("Next: %s" % Progress.describe(id, rank + 1)) if rank < mr else "Fully learned"
+	var dl := _text(_sk_box, detail, 20)
+	dl.custom_minimum_size = Vector2(600, 0)
+	var learn := _button(_sk_box, "Learn (1 point)", Color("3d8bff"))
+	learn.disabled = _sk_sel.x < 0 or not Progress.can_learn(c, _sk_sel.x, _sk_sel.y)
+	learn.pressed.connect(func():
+		Progress.learn(c, _sk_sel.x, _sk_sel.y)
+		_render_skills())
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	_sk_box.add_child(row)
+	_small_button(row, "Reset points", Color(1, 1, 1, 0.15)).pressed.connect(func():
+		Progress.respec(c)
+		_render_skills())
+	_small_button(row, "+1 level (test)", Color(1, 1, 1, 0.15)).pressed.connect(func():
+		if p["lvl"] < Progress.MAX_LEVEL:
+			p["lvl"] += 1
+			p["xp"] = 0
+			Progress.save()
+		_render_skills())
+	_small_button(row, "Done", Color("3d8bff")).pressed.connect(func(): _close_overlay(skills_panel, _sk_return))
+
+
+# =====================================================================
+# Core shop
+# =====================================================================
+
+func open_shop(from: String) -> void:
+	_sh_return = from
+	menu_panel.visible = false
+	over_panel.visible = false
+	shop_panel.visible = true
+	_render_shop()
+
+
+func _render_shop() -> void:
+	_clear(_sh_box)
+	_text(_sh_box, "Core shop · %d coins" % Progress.wallet, 34)
+	_text(_sh_box, "Shared by all characters. Coins from every run are saved here.", 20)
+	for k in Progress.CORE:
+		var u: Dictionary = Progress.CORE[k]
+		var l: int = Progress.core[k]
+		var pips := ""
+		for i in u["max"]:
+			pips += "■" if i < l else "□"
+		var card := _text(_sh_box, "%s  %s\n%s%s" % [u["name"], pips, ("Now: %s\n" % Progress.core_text(k, l)) if l > 0 else "",
+			("Next: %s" % Progress.core_text(k, l + 1)) if l < u["max"] else "Fully upgraded"], 21)
+		card.add_theme_color_override("font_color", Color(u["color"]).lightened(0.3))
+		card.custom_minimum_size = Vector2(600, 0)
+		var price: int = u["prices"][l] if l < u["max"] else 0
+		var buy := _small_button(_sh_box, "Maxed" if l >= u["max"] else "Buy level %d · %d coins" % [l + 1, price], Color("ffd23d").darkened(0.35))
+		buy.disabled = l >= u["max"] or Progress.wallet < price
+		buy.pressed.connect(func():
+			Progress.buy(k)
+			_render_shop())
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	_sh_box.add_child(row)
+	_small_button(row, "+500 coins (test)", Color(1, 1, 1, 0.15), 20).pressed.connect(func():
+		Progress.wallet += 500
+		Progress.save()
+		_render_shop())
+	_small_button(row, "Reset shop (test)", Color(1, 1, 1, 0.15), 20).pressed.connect(func():
+		for k in Progress.CORE:
+			for i in Progress.core[k]:
+				Progress.wallet += Progress.CORE[k]["prices"][i]
+			Progress.core[k] = 0
+		Progress.save()
+		_render_shop())
+	_small_button(row, "Done", Color("3d8bff"), 20).pressed.connect(func(): _close_overlay(shop_panel, _sh_return))

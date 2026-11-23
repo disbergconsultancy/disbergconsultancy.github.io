@@ -53,7 +53,7 @@ func update(angle: float) -> void:
 		# Power-ups float in the empty gap between patterns.
 		power_in -= length + gap
 		if power_in <= 0.0 and allow_powers:
-			power_in = 160.0 + rng.randf() * 140.0
+			power_in = (160.0 + rng.randf() * 140.0) / Progress.luck_mul()
 			_add_power(next_spawn + (length + gap / 2.0) / r, _lane())
 		next_spawn += (length + gap) / r
 	# Remove what is well behind the runner.
@@ -241,7 +241,7 @@ func _chunk_calm(phi: float) -> float:
 		var y := 1.2 + sin(m * 0.5) * 0.6 if int(m / 18.0) % 2 == 1 else 0.4
 		planet.add_item("COIN", _at(phi, m), Config.lane_x(lane), {"y0": y})
 		m += 1.8
-	if allow_powers and rng.randf() < 0.6:   # usually a power-up at the end of a calm stretch
+	if allow_powers and rng.randf() < minf(1.0, 0.6 * Progress.luck_mul()):   # usually a power-up at the end of a calm stretch
 		_add_power(_at(phi, Config.CALM_M - 5.0), _lane())
-		power_in = 160.0 + rng.randf() * 100.0
+		power_in = (160.0 + rng.randf() * 100.0) / Progress.luck_mul()
 	return Config.CALM_M

@@ -13,6 +13,7 @@ Everything is built in code (no editor scenes besides `scenes/main.tscn`), so it
 
 | Script | What it does |
 |---|---|
+| `scripts/progress.gd` | Autoload `Progress`: XP and levels, skill trees and their effects, core shop, balance stats, settings; saved in `user://save.cfg` |
 | `scripts/config.gd` | Autoload `Config`: all tuning (speeds, physics, difficulty, obstacle kinds, power-ups, characters, planets and bosses) |
 | `scripts/main.gd` | Game state, run loop: movement, collisions, close calls, combo, score, camera, save |
 | `scripts/planet.gd` | The rotating globe (low-poly terrain with colour patches and water), themed road, scenery kit per planet, placing items on the curve |
@@ -21,7 +22,7 @@ Everything is built in code (no editor scenes besides `scenes/main.tscn`), so it
 | `scripts/item.gd` | One obstacle/coin/surface: logical box for collisions + visual parts |
 | `scripts/character.gd` | Block figure on a humanoid joint layout with blended poses (run, jump, float, slam, slide, land, crash) |
 | `scripts/swipe_input.gd` | Swipes (vertical-friendly zones), taps, double-taps, hold |
-| `scripts/hud.gd` | HUD, ability meter, power-up list, start menu (character, difficulty, sound), crash screen |
+| `scripts/hud.gd` | HUD, ability meter, power-up list, boss bar, menu (character, difficulty, sound, boss test, stats), skill tree, core shop, crash screen |
 | `scripts/sfx.gd` | Synthesized sound effects, rendered once at startup (no audio files) |
 
 ## Self-test (headless)
@@ -30,10 +31,12 @@ godot --headless --path sphere-runner -- --autotest
 ```
 Simulates a 2-minute invincible run (reports distance, laps, coins, close calls, obstacle kinds),
 checks swipe directions, every power-up and each character's ability, a boss test on every planet
-(chase, throws, defeat, hop to the next planet), running into a boss boulder, then a real run without input (must crash).
+(chase, throws, defeat, hop to the next planet), running into a boss boulder, levels and skill points,
+skill effects (double jump, Meteor, Vault, Aftershock, Wrecking Ball), Stumble guard, XP and coins at game over,
+then a real run without input (must crash). Note: the self-test writes to this machine's save file.
 
 Screenshot at N seconds into a run: `godot --path sphere-runner -- --shot out.png 8` (add `menu` for the menu,
-`char=smasher`, `power=orbit`, `ability` or `boss=N` for a boss test on planet N).
+`char=smasher`, `power=orbit`, `ability`, `boss=N` for a boss test on planet N, or `menu skills` / `menu shop` / `menu over`).
 
 ## Port status
 - **Phase 1 (done):** core run: planet, lanes, jump/float/slam/slide/air dash/jump buffer, ramps and roofs,
@@ -45,4 +48,6 @@ Screenshot at N seconds into a run: `godot --path sphere-runner -- --shot out.pn
 - **Phase 3 (done):** the four planets (Meadow, Dunes, Glacier, Ember) with low-poly terrain, themed road and
   scenery kits; laps per world, the boss chase (boss on the horizon from the final lap, throws onto red markers,
   stomp waves, per-boss tuning, run underneath to win), planet hop with flip and white flash, boss test buttons.
-- **Phase 4:** XP, levels and skill trees, core shop, settings, balance stats.
+- **Phase 4 (done):** XP and levels 1-20 per character (~250 runs; 13 skill points), skill trees v2 (3 branches x 4
+  tiers, boss and XP nodes, capstones), core shop with a coin wallet (Luck, Power-up duration, Stumble guard),
+  balance stats, saved settings. Test buttons: +1 level, +500 coins, reset.

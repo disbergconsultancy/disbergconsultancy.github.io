@@ -59,6 +59,12 @@ var hop_t := 0.0
 var hop_base := 0.0
 var hop_swapped := false
 var test_run := -1             # boss test: planet index (no scores saved), -1 = normal run
+var st := {}                   # this run's stats: character base + learned skills (Progress.stats)
+var air_jumps := 0
+var hang_used := 0.0
+var slip_t := 0.0
+var smashes := 0
+var stumbles_left := 0
 var _sky_mat: ProceduralSkyMaterial
 var _env: Environment         # [{ "node": MeshInstance3D, "v": Vector3, "life": float }]
 
@@ -100,9 +106,13 @@ func _ready() -> void:
 	hud.pause_pressed.connect(_toggle_pause)
 	hud.character_changed.connect(func():
 		character.build(Config.char_def())
-		best = _load_best()
+		Progress.save()
+		best = Progress.best_score()
 		hud.show_menu(best))
-	best = _load_best()
+	best = Progress.best_score()
+	hud.progress_changed.connect(func():
+		st = Progress.stats()
+		best = Progress.best_score())
 	reset()
 	hud.show_menu(best)
 	var args := OS.get_cmdline_user_args()
@@ -122,6 +132,8 @@ func _ready() -> void:
 				_test["ability"] = true
 			elif a.begins_with("boss="):     # start a boss test on planet N instead of a normal run
 				_test["boss"] = int(a.substr(5))
+			elif a == "skills" or a == "shop" or a == "over":
+				_test["screen"] = a
 
 
 func _exit_tree() -> void:
@@ -226,6 +238,12 @@ func reset() -> void:
 	character.set_glow(false)
 	for k in pw:
 		pw[k] = 0.0
+	st = Progress.stats()
+	air_jumps = 0
+	hang_used = 0.0
+	slip_t = 0.0
+	smashes = 0
+	stumbles_left = Progress.stumbles_per_run()
 	meter = 0.0
 	ability_t = 0.0
 	ability_total = 0.0
@@ -241,6 +259,7 @@ func reset() -> void:
 
 func start_run() -> void:
 	test_run = -1
+	Progress.save()            # remembers character, difficulty and sound
 	spawner.allow_powers = true
 	sfx.enabled = Config.sound
 	reset()
@@ -285,6 +304,25 @@ func crash(it: Item = null) -> void:
 		shake = 0.35
 		hud.flash("SHIELD!")
 		sfx.play("shield")
+		return
+	# Stumble guard (core shop): a small hit knocks the obstacle over instead of ending the run.
+	if stumbles_left > 0 and it and it.kind in ["LOW", "HIGH", "FIST", "SWEEPLOW", "SWEEPHIGH", "SHOCK"]:
+		stumbles_left -= 1
+		var lv: int = Progress.core["stumble"]
+		planet.hide_item(it)
+		_burst(it, Config.KIND[it.kind]["color"])
+		combo = 0
+		combo_t = 0.0
+		combo_level = 1
+		meter = meter * 0.5 if lv >= 2 else 0.0
+		speed *= 0.88 if lv >= 2 else 0.8
+		pw["invuln"] = 0.8
+		squash = 1.0
+		character.land_t = 0.16
+		shake = 0.45
+		hud.flash("STUMBLE!" + ("\n1 left" if stumbles_left > 0 else ""))
+		sfx.play("smash")
+		Input.vibrate_handheld(40)
 		return
 	state = "hit"
 	sfx.play("crash")
@@ -358,12 +396,19 @@ func _game_over() -> void:
 			else ("%d m left to pass it" % int(boss.dist - boss.done) if boss.phase == "fight" else "Chase not reached")], "Boss test (not saved)")
 		return
 	var s := score()
-	var is_best := s > best
-	if is_best and test_run < 0:
-		best = s
-		_save_best()
-	hud.show_over("Score %d%s\nBest %d\nLaps %d · Coins %d\nDistance %d m · Close calls %d\nBosses defeated %d" % [
-		s, "  NEW BEST!" if is_best else "", best, lap, coins, int(dist), close_calls, boss.kills])
+	var is_best := Progress.record_run(int(dist), s)
+	best = Progress.best_score()
+	var aw := Progress.award(Config.character, int(dist / 4.0) + coins * 2 + close_calls * 5 + smashes * 3 + boss.kills * 250)
+	Progress.wallet += coins
+	Progress.save()
+	var p: Dictionary = Progress.prog[Config.character]
+	var level_line := ""
+	if aw["levels"] > 0:
+		level_line = "\nLEVEL UP! " + ("+%d skill point%s" % [aw["points"], "" if aw["points"] == 1 else "s"] if aw["points"] > 0 else "(next point at the next level)")
+	var xp_line := "Max level" if p["lvl"] >= Progress.MAX_LEVEL else "%d / %d XP" % [p["xp"], Progress.xp_for_next(p["lvl"])]
+	hud.show_over("Score %d%s\nBest %d\nLaps %d · Coins %d\nDistance %d m · Close calls %d\nBosses defeated %d\n\n+%d XP · %s Lv %d (%s)%s\n+%d coins · wallet %d" % [
+		s, "  NEW BEST!" if is_best else "", best, lap, coins, int(dist), close_calls, boss.kills,
+		aw["xp"], Config.CHARS[Config.character]["name"], p["lvl"], xp_line, level_line, coins, Progress.wallet])
 
 
 func _on_tap() -> void:
@@ -389,6 +434,9 @@ func _on_action(dir: String) -> void:
 				return
 			if grounded:
 				_jump()
+			elif st["double_jump"] and air_jumps == 0 and not super_active:
+				air_jumps = 1
+				_jump()
 			else:
 				jump_buffer_t = Config.JUMP_BUFFER
 		"down":
@@ -396,13 +444,13 @@ func _on_action(dir: String) -> void:
 				return
 			slide_t = Config.SLIDE_TIME
 			if not grounded:
-				vy = Config.SLAM_V
+				vy = Config.SLAM_V * st["slam_mul"]
 			sfx.play("slide")
 
 
 func _jump() -> void:
 	slide_t = 0.0
-	vy = Config.char_def()["jump_v"]
+	vy = st["jump_v"]
 	sfx.play("jump")
 	jump_buffer_t = 0.0
 	grounded = false
@@ -413,12 +461,12 @@ func _jump() -> void:
 func _add_combo(n: int) -> void:
 	var was := meter
 	var gain: float = Config.METER_PER_CLOSE if n >= 3 else Config.METER_PER_COIN * n
-	meter = minf(1.0, meter + gain * Config.char_def()["meter_mul"])
+	meter = minf(1.0, meter + gain * st["meter_mul"])
 	if was < 1.0 and meter >= 1.0:
 		hud.pop(Config.char_def()["label"] + " READY")
 		sfx.play("ready")
 	combo += n
-	combo_t = Config.char_def()["combo_time"]
+	combo_t = st["combo_time"]
 	var lv := _combo_mult()
 	if lv > combo_level:
 		combo_level = lv
@@ -440,11 +488,11 @@ func activate(kind: String) -> void:
 	if kind == "shield":
 		pw["shield"] = 1.0
 	else:
-		pw[kind] = Config.POWERS[kind]["time"]
+		pw[kind] = Config.POWERS[kind]["time"] * Progress.dur_mul()
 	if kind == "orbit":
 		sky_coin_in = 0.0
 		slide_t = 0.0
-		pw["invuln"] = Config.POWERS["orbit"]["time"] + 1.4
+		pw["invuln"] = Config.POWERS["orbit"]["time"] * Progress.dur_mul() + 1.4
 
 
 ## Double-tap when the meter is full.
@@ -463,11 +511,12 @@ func use_ability() -> void:
 		squash = -1.0
 		jump_buffer_t = 0.0
 		super_active = true
+		hang_used = 0.0
 		ability_t = 1.6       # only for the glow
 		ability_total = 1.6
 	else:
-		ability_t = d["ability_time"]
-		ability_total = d["ability_time"]
+		ability_t = st["ability_time"]
+		ability_total = st["ability_time"]
 
 
 func _smash(it: Item) -> void:
@@ -475,18 +524,35 @@ func _smash(it: Item) -> void:
 	_burst(it, Config.KIND[it.kind]["color"])
 	shake = maxf(shake, 0.25)
 	sfx.play("smash")
-	var b: int = Config.SMASH_POINTS * _mult() * _combo_mult()
+	smashes += 1
+	var b: int = (Config.SMASH_POINTS + st["smash_pts"]) * _mult() * _combo_mult()
 	pts += b
-	_add_combo(2)
-	# Each smash extends Smash a little, but one activation never lasts longer than ability_max.
-	var d := Config.char_def()
-	var add := clampf(d["ability_max"] - ability_total, 0.0, d["smash_extend"])
+	_add_combo(2 + st["smash_combo"])
+	if st["jackpot"]:
+		coins += 3
+		pts += 30 * st["coin_mul"] * _mult() * _combo_mult()
+	# Each smash extends an active Smash a little, but never past ability_max.
+	var smashing: bool = ability_t > 0.0 and Config.char_def()["ability"] == "smash"
+	var add: float = clampf(st["ability_max"] - ability_total, 0.0, st["smash_extend"]) if smashing else 0.0
 	ability_t += add
 	ability_total += add
 	hud.pop("SMASH +%d%s" % [b, ("  +%.1fs" % add) if add > 0.0 else ""])
 
 
 ## Debris: small cubes thrown up and back.
+## Smash everything smashable within [from_m, to_m] metres ahead (Aftershock, Meteor).
+func _blast(from_m: float, to_m: float, label: String) -> void:
+	var n := 0
+	for it in planet.items:
+		var d := _ahead_m(it)
+		if it.alive and it.kind in Config.SMASHABLE and d > from_m and d < to_m:
+			_smash(it)
+			n += 1
+	shake = maxf(shake, 0.45)
+	if n > 0:
+		hud.flash(label)
+
+
 func _burst(it: Item, color: Color) -> void:
 	var origin: Vector3 = it.parts[0]["node"].global_position
 	var m := planet.mat(color)
@@ -517,7 +583,7 @@ func _update_debris(dt: float) -> void:
 
 
 func _combo_mult() -> int:
-	return 1 + mini(4, combo / 10)
+	return 1 + mini(st.get("combo_cap", 5) - 1, combo / st.get("combo_step", 10))
 
 
 # =====================================================================
@@ -533,7 +599,9 @@ func _process(delta: float) -> void:
 	if state == "run" and ability_t > 0.0:
 		ability_t = maxf(0.0, ability_t - dt)
 		if Config.char_def()["ability"] == "focus":
-			gdt = dt * 0.45     # Focus slows the whole game down
+			gdt = dt * st["focus_slow"]     # Focus slows the whole game down
+		if ability_t == 0.0 and Config.char_def()["ability"] == "smash" and st["aftershock"]:
+			_blast(-1.0, 10.0, "AFTERSHOCK!")   # when Smash ends, clear the next 10 m
 	step(gdt)
 	_update_debris(gdt)
 	_render(dt)
@@ -581,6 +649,7 @@ func step(dt: float) -> void:
 			combo_level = 1
 	if dash_t > 0.0:
 		dash_t -= dt
+	slip_t = maxf(0.0, slip_t - dt)
 	for k in ["magnet", "orbit", "x2", "invuln"]:
 		pw[k] = maxf(0.0, pw[k] - dt)
 	# Orbit: a trail of sky coins to collect while flying high.
@@ -625,11 +694,10 @@ func _surface_under_player() -> float:
 
 
 func _move_player(dt: float) -> void:
-	var cd := Config.char_def()
 	if hop_t > 0.0:
 		px = move_toward(px, lane * Config.LANE_W, Config.LANE_SPEED * dt)
 		return
-	px = move_toward(px, lane * Config.LANE_W, Config.LANE_SPEED * cd["lane_mul"] * (2.0 if dash_t > 0.0 else 1.0) * dt)
+	px = move_toward(px, lane * Config.LANE_W, Config.LANE_SPEED * st["lane_mul"] * (1.2 if slip_t > 0.0 else 1.0) * (2.0 * st["air_dash_mul"] if dash_t > 0.0 else 1.0) * dt)
 	if pw["orbit"] > 0.0:
 		py += (Config.ORBIT_H - py) * minf(1.0, dt * 3.0)   # float high above the globe
 		vy = 0.0
@@ -642,9 +710,12 @@ func _move_player(dt: float) -> void:
 		grounded = false
 		var g := Config.GRAVITY
 		# Holding the finger down after a jump floats a little near the top.
-		if swipe.holding and vy < 3.0 and float_t < cd["float_time"] and slide_t <= 0.0:
+		if swipe.holding and vy < 3.0 and float_t < st["float_time"] and slide_t <= 0.0:
 			g *= Config.FLOAT_GRAVITY
 			float_t += dt
+		if super_active and absf(vy) < 5.0 and hang_used < st["hang_time"]:
+			g *= 0.12            # Hang Time: hover at the top of a super jump
+			hang_used += dt
 		vy -= g * dt
 		py += vy * dt
 		if py <= ground_y:
@@ -654,7 +725,11 @@ func _move_player(dt: float) -> void:
 			grounded = true
 			if hard:
 				squash = 1.0
-			super_active = false
+			air_jumps = 0
+			if super_active:
+				super_active = false
+				if st["meteor"]:
+					_blast(-1.0, 9.0, "METEOR!")   # landing from a super jump smashes what is just ahead
 			character.land_t = 0.16
 			if jump_buffer_t > 0.0:
 				_jump()
@@ -681,7 +756,8 @@ func _collide() -> void:
 			continue
 		var d := _ahead_m(it)
 		# Magnet pulls nearby coins in.
-		if it.kind == "COIN" and pw["magnet"] > 0.0 and d < 9.0 and d > -1.0 and absf(it.x - px) < 5.0:
+		var focus_field: bool = st["focus_magnet"] and ability_t > 0.0 and Config.char_def()["ability"] == "focus"
+		if it.kind == "COIN" and (pw["magnet"] > 0.0 or focus_field) and d < 9.0 and d > -1.0 and absf(it.x - px) < 5.0:
 			var k := minf(1.0, get_process_delta_time() * 10.0)
 			it.x += (px - it.x) * k
 			it.y0 += (py + 0.5 - it.y0) * k
@@ -697,19 +773,34 @@ func _collide() -> void:
 		# Close calls: clearing an obstacle by a small margin.
 		if it.kind in Config.HAZARDS and not it.passed and it.kind != "PLATFORM" and it.kind != "PIT":
 			if overlap_z:
+				if not grounded and py >= it.y1 - 0.15 and absf(it.x - px) < it.hw + Config.PLAYER_SIZE.x / 2.0:
+					it.set_meta("vaulted", true)
 				var lat := absf(it.x - px) - (it.hw + Config.PLAYER_SIZE.x / 2.0)
 				var above := py - it.y1
 				var below := it.y0 - (py + ph)
 				it.min_clear = minf(it.min_clear, maxf(lat, maxf(above, below)))
 			elif d < -(it.hd + hd):
 				it.passed = true
+				# Vault (Jumper): jumping a boss throw or a crate fills the meter.
+				if it.has_meta("vaulted"):
+					var gain: float = st["vault_boss"] if it.boss else st["vault_crate"] if it.kind == "LOW" else 0.0
+					if gain > 0.0:
+						var was := meter
+						meter = minf(1.0, meter + gain)
+						if was < 1.0 and meter >= 1.0:
+							hud.pop(Config.char_def()["label"] + " READY")
+							sfx.play("ready")
 				if it.min_clear < Config.NEAR_MISS and it.min_clear > -0.3 and pw["orbit"] <= 0.0:
 					close_calls += 1
-					var b := 25 * _mult() * _combo_mult()
+					var b: int = (25 + st["close_bonus"]) * _mult() * _combo_mult()
 					pts += b
 					_add_combo(3)
 					hud.pop("CLOSE! +%d" % b)
 					sfx.play("close")
+					if st["updraft"] and not grounded:
+						meter = minf(1.0, meter + 0.1)
+					if st["slipstream"]:
+						slip_t = 1.5
 		if not overlap_z or not overlap_x:
 			continue
 		match it.kind:
@@ -733,7 +824,7 @@ func _collide() -> void:
 		if it.kind == "COIN":
 			planet.hide_item(it)
 			coins += 1
-			pts += 10 * _mult() * _combo_mult()
+			pts += 10 * st["coin_mul"] * (1.0 if grounded else st["air_coin_mul"]) * _mult() * _combo_mult()
 			_add_combo(1)
 			sfx.play("coin")
 		elif it.kind == "POWER":
@@ -742,6 +833,9 @@ func _collide() -> void:
 		elif pw["orbit"] <= 0.0:
 			if ability_t > 0.0 and Config.char_def()["ability"] == "smash" and it.kind in Config.SMASHABLE:
 				_smash(it)
+				continue
+			if st["ram"] and it.kind == "LOW" and slide_t > 0.0 and grounded:
+				_smash(it)      # Battering Ram: sliding breaks crates
 				continue
 			crash(it)
 			if state != "run":
@@ -764,7 +858,7 @@ func _render(dt: float) -> void:
 	character.update_pose(dt, state, {
 		"grounded": grounded, "slide": slide_t, "vy": vy, "speed": speed,
 		"hop": 1.0 - hop_t / Config.HOP_TIME if hop_t > 0.0 else -1.0, "orbit": pw["orbit"] > 0.0,
-		"floating": swipe.holding and float_t > 0.0 and float_t < Config.char_def()["float_time"] and vy < 3.0,
+		"floating": swipe.holding and float_t > 0.0 and float_t < st["float_time"] and vy < 3.0,
 		"lean": px - lane * Config.LANE_W, "twist": (lane * Config.LANE_W - px) if dash_t > 0.0 else 0.0})
 	hitbox.scale = Vector3(Config.PLAYER_SIZE.x, h, Config.PLAYER_SIZE.z)
 	hitbox.position = Vector3(px, planet.radius + py + h / 2.0, 0.0)
@@ -804,12 +898,14 @@ func _update_hud() -> void:
 			list.append("%s %d" % [Config.POWERS[k]["label"], ceili(pw[k])])
 	if pw["shield"] > 0.0:
 		list.append("SHIELD")
+	if stumbles_left > 0:
+		list.append("STUMBLE GUARD %d" % stumbles_left)
 	hud.powers_label.text = "\n".join(list)
 	if _mult() > 1:
 		hud.score_label.text += "  x2"
 	var cd := Config.char_def()
 	var showing_ability: bool = ability_t > 0.0 and cd["ability_time"] > 0.0
-	var frac: float = ability_t / cd["ability_max"] if showing_ability else meter
+	var frac: float = ability_t / st["ability_max"] if showing_ability else meter
 	var text: String = cd["label"] if showing_ability else ("DOUBLE-TAP: " + cd["label"] if meter >= 1.0 else cd["label"])
 	hud.set_meter(frac, cd["visor"], text, meter >= 1.0 and ability_t <= 0.0)
 
@@ -818,18 +914,7 @@ func _update_hud() -> void:
 # Save
 # =====================================================================
 
-func _load_best() -> int:
-	var cfg := ConfigFile.new()
-	if cfg.load("user://save.cfg") == OK:
-		return int(cfg.get_value("best", Config.character + "_" + Config.difficulty, 0))
-	return 0
 
-
-func _save_best() -> void:
-	var cfg := ConfigFile.new()
-	cfg.load("user://save.cfg")
-	cfg.set_value("best", Config.character + "_" + Config.difficulty, best)
-	cfg.save("user://save.cfg")
 
 
 func _spawn_ahead(kind: String, m: float) -> Item:
@@ -844,11 +929,124 @@ func _sim(seconds: float, dt: float) -> float:
 		if ability_t > 0.0:
 			ability_t = maxf(0.0, ability_t - dt)
 			if Config.char_def()["ability"] == "focus":
-				gdt = dt * 0.45
+				gdt = dt * st["focus_slow"]
 		step(gdt)
 		_update_debris(gdt)
 		peak = maxf(peak, py)
 	return peak
+
+
+func _set_build(c: String, alloc: Dictionary) -> void:
+	Config.character = c
+	character.build(Config.char_def())
+	Progress.prog[c] = {"lvl": 20, "xp": 0, "alloc": alloc}
+
+
+func _autotest_phase4(dt: float) -> void:
+	var saved := Progress.prog.duplicate(true)
+	print("AUTOTEST levels: xp for level 2 = %d, level 20 total = %d, points at 8/9/10/20 = %d/%d/%d/%d" % [
+		Progress.xp_for_next(1), range(1, 20).reduce(func(a, l): return a + Progress.xp_for_next(l), 0),
+		Progress.points_at_level(8), Progress.points_at_level(9), Progress.points_at_level(10), Progress.points_at_level(20)])
+	# Tier gate: a capstone needs 6 points in its branch.
+	_set_build("runner", {})
+	print("AUTOTEST capstone with 0 points in branch learnable: %s; after 3+2+1: %s" % [Progress.can_learn("runner", 1, 3),
+		(func():
+			Progress.prog["runner"]["alloc"] = {"quickfeet": 3, "aircontrol": 2, "spring": 1}
+			return Progress.can_learn("runner", 1, 3)).call()])
+	var s0 := Progress.stats("runner")
+	print("AUTOTEST runner build stats: lane x%.2f, jump v %.1f, xp x%.2f" % [s0["lane_mul"], s0["jump_v"], s0["xp_mul"]])
+	# Double jump (Jumper capstone)
+	_set_build("jumper", {"springlegs": 3, "glider": 2, "quickland": 1, "djump": 1})
+	god = true
+	start_run()
+	_sim(0.3, dt)
+	_on_action("up")
+	_sim(0.25, dt)
+	_on_action("up")
+	var peak := _sim(1.2, dt)
+	print("AUTOTEST jumper double jump: air jumps %d, peak %.1f m" % [air_jumps if not grounded else 1, peak])
+	# Meteor and Vault
+	_set_build("jumper", {"windup": 3, "vault": 2, "hang": 1, "meteor": 1})
+	start_run()
+	_sim(0.3, dt)
+	meter = 1.0
+	use_ability()
+	_sim(0.6, dt)
+	_spawn_ahead("WALL", 9.0)
+	var s_before := smashes
+	_sim(2.5, dt)
+	print("AUTOTEST jumper meteor: smashes on landing %d" % (smashes - s_before))
+	meter = 0.0
+	_spawn_ahead("LOW", 10.0)
+	_sim(0.15, dt)
+	_on_action("up")
+	_sim(1.2, dt)
+	print("AUTOTEST jumper vault over a crate: meter %.2f (expected ~0.06)" % meter)
+	# Aftershock
+	_set_build("smasher", {"fuel": 3, "wreck": 2, "overdrive": 1, "aftershock": 1})
+	start_run()
+	_sim(0.3, dt)
+	meter = 1.0
+	use_ability()
+	while ability_t > 0.25:
+		_sim(0.05, dt)
+	_spawn_ahead("WALL", 6.0)
+	s_before = smashes
+	for i in 60:                 # frame loop path, where Aftershock fires
+		var gdt := dt
+		if ability_t > 0.0:
+			ability_t = maxf(0.0, ability_t - dt)
+			if ability_t == 0.0 and st["aftershock"]:
+				_blast(-1.0, 10.0, "AFTERSHOCK!")
+		step(gdt)
+	print("AUTOTEST smasher aftershock: smashes when Smash ended %d" % (smashes - s_before))
+	# Wrecking Ball in a boss chase
+	start_boss_test(0)
+	while boss.phase != "fight":
+		step(dt)
+	meter = 1.0
+	use_ability()
+	s_before = smashes
+	var t := 0.0
+	while t < 8.0 and smashes - s_before < 2:
+		for it in planet.items:
+			if it.fly_t >= 0.0 and it.kind == "FIST":
+				lane = int(round(it.x / Config.LANE_W))
+		step(dt)
+		t += dt
+	print("AUTOTEST smasher wrecking ball: throws shattered or smashed %d" % (smashes - s_before))
+	# Stumble guard (core shop)
+	var saved_core: Dictionary = Progress.core.duplicate()
+	Progress.core["stumble"] = 3
+	_set_build("runner", {})
+	god = false
+	start_run()
+	var out := []
+	for k in ["HIGH", "FIST", "LOW"]:
+		if state != "run":
+			out.append(k + ":over")
+			continue
+		_spawn_ahead(k, 6.0)
+		_sim(1.0, dt)
+		out.append("%s:%s/%d" % [k, state, stumbles_left])
+	print("AUTOTEST stumble guard L3: ", "  ".join(out))
+	# Game over: XP and coins saved
+	_set_build("runner", {})
+	Progress.core = saved_core
+	var w0 := Progress.wallet
+	god = true
+	start_run()
+	_sim(20.0, dt)
+	god = false
+	var c := coins
+	_spawn_ahead("WALL", 5.0)
+	_sim(1.5, dt)
+	print("AUTOTEST game over: state %s, coins %d -> wallet +%d, runner level %d xp %d" % [state, c, Progress.wallet - w0, Progress.prog["runner"]["lvl"], Progress.prog["runner"]["xp"]])
+	Progress.wallet = w0
+	Progress.prog = saved
+	Progress.save()
+	Config.character = "runner"
+	character.build(Config.char_def())
 
 
 func _autotest_phase3(dt: float) -> void:
@@ -938,7 +1136,7 @@ func _autotest_phase2(dt: float) -> void:
 			report = "after running into a wall and a crate during Smash: state %s, Smash %.2f s left (extended to %.1f)" % [state, ability_t, ability_total]
 		else:
 			var p := _sim(2.0, dt)
-			report = "super jump peak %.1f m (normal jump ~%.1f m)" % [p, pow(Config.char_def()["jump_v"], 2) / (2.0 * Config.GRAVITY)]
+			report = "super jump peak %.1f m (normal jump ~%.1f m)" % [p, pow(st["jump_v"], 2) / (2.0 * Config.GRAVITY)]
 		print("AUTOTEST %s: %s" % [c, report])
 	Config.character = "runner"
 	character.build(Config.char_def())
@@ -978,6 +1176,25 @@ func _autotest_tick() -> void:
 			for i in 30:
 				step(dt)
 				_render(dt)
+			match _test.get("screen", ""):
+				"skills":
+					Progress.prog[Config.character]["lvl"] = 12
+					Progress.prog[Config.character]["alloc"] = {"quickfeet": 3, "aircontrol": 2, "rhythm": 1}
+					hud.open_skills("menu")
+				"shop":
+					Progress.wallet = 650
+					Progress.core = {"luck": 1, "dur": 0, "stumble": 1}
+					hud.open_shop("menu")
+				"over":
+					start_run()
+					god = false
+					for i in 600:
+						step(dt)
+						if state != "run":
+							break
+					for i in 30:
+						step(dt)
+					_render(dt)
 		for i in 3:
 			await get_tree().process_frame
 		await RenderingServer.frame_post_draw
@@ -1029,6 +1246,9 @@ func _autotest_tick() -> void:
 		_test["phase"] = "phase3"
 	elif _test["phase"] == "phase3":
 		_autotest_phase3(dt)
+		_test["phase"] = "phase4"
+	elif _test["phase"] == "phase4":
+		_autotest_phase4(dt)
 		_test["phase"] = "real"
 	elif _test["phase"] == "real":
 		god = false

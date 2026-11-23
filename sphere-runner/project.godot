@@ -10,6 +10,7 @@ config/features=PackedStringArray("4.7", "Mobile")
 [autoload]
 
 Config="*res://scripts/config.gd"
+Progress="*res://scripts/progress.gd"
 
 [display]
 

@@ -175,7 +175,7 @@ func _schedule(dt: float) -> void:
 		return
 	var bt: Dictionary = Config.THEME["boss"]
 	# Land between the runner and the boss, as far ahead as possible (more warning).
-	var target := minf(30.0, a - Config.BOSS_SIZE / 2.0 - 2.0)
+	var target := minf(30.0 + game.st.get("throw_lead", 0.0), a - Config.BOSS_SIZE / 2.0 - 2.0)   # Read the Throw: further ahead
 	var lvl := int(progress() * Config.THEME["boss_loops"])
 	var last: bool = lvl >= Config.THEME["boss_loops"] - 1
 	_attack_t = maxf(14.0, game.speed * (1.15 - 0.07 * lvl - (0.1 if last else 0.0)) * bt["gap_mul"]) / maxf(game.speed, 1.0)
@@ -253,6 +253,15 @@ func _update_throws(dt: float) -> void:
 			continue
 		it.fly_t = minf(it.fly_dur, it.fly_t + dt)
 		var u := it.fly_t / it.fly_dur
+		# Wrecking Ball (Smasher): during Smash, throws aimed at your lane shatter in mid-air.
+		if game.st.get("wreck", false) and u > 0.35 and u < 1.0 and game.ability_t > 0.0 and Config.char_def()["ability"] == "smash" \
+				and it.alive and absf(it.x - game.px) < it.hw + 0.6:
+			it.fly_t = -1.0
+			for m in it.marks:
+				planet.hide_item(m)
+			game._smash(it)
+			game.hud.pop("WRECKED!")
+			continue
 		if u < 1.0 and phase != "none":
 			var phi_b: float = game.angle + ahead() / planet.radius
 			var y_b := Config.BOSS_LIFT + Config.BOSS_SIZE * 0.5
