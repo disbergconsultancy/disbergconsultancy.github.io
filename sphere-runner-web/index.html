@@ -42,6 +42,8 @@
   #stats td, #stats th { padding: 4px 2px; text-align: right; border-bottom: 1px solid rgba(255,255,255,.1); }
   #stats td:first-child, #stats th:first-child { text-align: left; }
   #stats th { font-weight: 600; opacity: .7; }
+  .swipeMark { position: fixed; transform: translate(-50%, -120%); background: rgba(0,0,0,.65); color: #fff; font-weight: 900;
+    font-size: 18px; padding: 4px 8px; border-radius: 8px; pointer-events: none; z-index: 5; }
   #pauseBtn { position: fixed; right: calc(env(safe-area-inset-right) + 14px); bottom: calc(env(safe-area-inset-bottom) + 14px);
     width: 44px; height: 44px; border-radius: 22px; border: 0; background: rgba(0,0,0,.3); color: #fff; font-size: 18px; font-weight: 800; }
   .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -109,6 +111,7 @@
     <div class="opt"><div>Shrinking globe<small>The world gets smaller every lap</small></div><input type="checkbox" id="optShrink"></div>
     <div class="opt"><div>Difficulty<small>Speed, obstacle density and mix</small></div><div class="seg" id="segDiff"><button data-v="easy">Easy</button><button data-v="medium">Medium</button><button data-v="hard">Hard</button></div></div>
     <div class="opt"><div>Sound</div><input type="checkbox" id="optSound"></div>
+    <div class="opt"><div>Show swipes<small>Shows the direction the game detected</small></div><input type="checkbox" id="optSwipes"></div>
     <div class="opt"><div>Show hitbox<small>The box collisions actually use</small></div><input type="checkbox" id="optHitbox"></div>
     <button class="go" id="playBtn">Play</button>
     <p id="bestLine" style="text-align:center;margin-top:10px"></p>
@@ -197,7 +200,7 @@ const store = {
 };
 const opts = {
   shrink: store.get('shrink', false),
-  size: GLOBE_R, diff: store.get('diff', 'medium'), sound: store.get('sound', true), hitbox: store.get('hitbox', false), char: store.get('char', 'runner'),
+  size: GLOBE_R, diff: store.get('diff', 'medium'), sound: store.get('sound', true), hitbox: store.get('hitbox', false), swipes: store.get('swipes', false), char: store.get('char', 'runner'),
 };
 const modeKey = () => `${opts.char}_${opts.diff}_${opts.shrink ? 'S' : ''}${opts.size}`;
 
@@ -1449,6 +1452,9 @@ function frame(now) {
 // Input: swipes (touch or mouse drag) and keyboard
 // =====================================================================
 const SWIPE_MIN = 28;
+// Thumbs curve, so vertical swipes get the wider zone: a swipe only counts as sideways
+// when it is within about 39 degrees of horizontal (|dy| < 0.8 * |dx|).
+const SIDEWAYS_RATIO = 0.8;
 let down = null;
 const cvs = renderer.domElement;
 cvs.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, used: false, t: performance.now() }; holding = true; });
@@ -1457,9 +1463,19 @@ cvs.addEventListener('pointermove', e => {
   const dx = e.clientX - down.x, dy = e.clientY - down.y;
   if (Math.hypot(dx, dy) < SWIPE_MIN) return;
   down.used = true;
-  if (Math.abs(dx) > Math.abs(dy)) action(dx > 0 ? 'right' : 'left');
-  else action(dy > 0 ? 'down' : 'up');
+  const dir = Math.abs(dy) < Math.abs(dx) * SIDEWAYS_RATIO ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+  if (opts.swipes) showSwipe(e.clientX, e.clientY, dir, Math.round(Math.atan2(-dy, dx) * 180 / Math.PI));
+  action(dir);
 });
+// Debug: show which direction the game detected, and the swipe angle (0 = right, 90 = up).
+function showSwipe(x, y, dir, deg) {
+  const el = document.createElement('div');
+  el.className = 'swipeMark';
+  el.textContent = { left: '\u2190', right: '\u2192', up: '\u2191', down: '\u2193' }[dir] + ' ' + deg + '\u00b0';
+  el.style.left = x + 'px'; el.style.top = y + 'px';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 700);
+}
 const endPointer = () => {
   // A tap (no swipe, short press); two taps within 0.45 s trigger the character ability.
   if (down && !down.used && performance.now() - down.t < 300) {
@@ -1557,6 +1573,7 @@ function refreshMenu() {
 bindCheck('optShrink', 'shrink');
 bindCheck('optSound', 'sound');
 bindCheck('optHitbox', 'hitbox');
+bindCheck('optSwipes', 'swipes');
 bindSeg('segDiff', 'diff');
 {
   const pickEl = $('charPick');
