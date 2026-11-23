@@ -52,9 +52,16 @@ const KIND := {
 	"RAMP": {"h": 1.6, "y0": 0.0, "d": 5.0, "color": Color("8899bb")},
 	"COIN": {"h": 0.45, "y0": 0.0, "d": 0.45, "color": Color("ffd91a")},
 	"POWER": {"h": 0.7, "y0": 0.5, "d": 0.7, "color": Color.WHITE},
+	# Boss throws (same colour code) and helpers
+	"FIST": {"h": 2.6, "y0": 0.0, "d": 2.0, "color": Color("d93333")},
+	"BLOCK": {"h": 3.2, "y0": 0.0, "d": 1.6, "color": Color("d93333")},
+	"SWEEPLOW": {"h": 0.9, "y0": 0.0, "d": 1.2, "color": Color("ff8c26")},
+	"SWEEPHIGH": {"h": 1.4, "y0": 1.0, "d": 1.2, "color": Color("d940cc")},
+	"SHOCK": {"h": 0.5, "y0": 0.0, "d": 0.7, "color": Color.WHITE},
+	"MARK": {"h": 0.04, "y0": 0.02, "d": 2.6, "color": Color("ff2a2a")},
 }
-const HAZARDS := ["LOW", "HIGH", "WALL", "MOVER", "PIT", "PLATFORM"]
-const SMASHABLE := ["LOW", "HIGH", "WALL", "MOVER"]
+const HAZARDS := ["LOW", "HIGH", "WALL", "MOVER", "PIT", "PLATFORM", "FIST", "BLOCK", "SWEEPLOW", "SWEEPHIGH", "SHOCK"]
+const SMASHABLE := ["LOW", "HIGH", "WALL", "MOVER", "FIST", "BLOCK", "SWEEPLOW", "SWEEPHIGH", "SHOCK"]
 
 # --- Power-ups --------------------------------------------------------
 const POWERS := {
@@ -89,12 +96,45 @@ const CHARS := {
 		"shape": {"torso_w": 0.85, "shoulder": 0.9, "arm_t": 0.85, "hand": 1.0, "leg_len": 1.18, "leg_t": 0.85, "head": 1.0}},
 }
 
-# Meadow planet colours (more planets come in a later phase).
-const THEME := {
-	"sky_top": Color("5f9fe6"), "sky_bottom": Color("cfe8f7"),
-	"ground": [Color("6cbf5a"), Color("5aa84d"), Color("8a9a58")],
-	"track": Color("6e5f50"), "curb": Color("e9dfcc"), "dash": Color("fff6e0"),
-}
+# --- Planets ----------------------------------------------------------
+# Each world: its own size, colours and scenery; a number of laps, then a boss chase
+# (as long as `boss_loops` x BOSS_LOOP_M) and a hop to the next planet.
+const HOP_TIME := 2.6
+const HOP_H := 14.0
+const BOSS_SIZE := 14.0
+const BOSS_LIFT := 6.0          # the boss straddles the track: you run underneath it
+const BOSS_LOOP_M := 138.2      # one "loop" of chase distance (2 * PI * 22 m)
+const THEMES := [
+	{"name": "MEADOW", "radius": 45.0, "sky_top": Color("5f9fe6"), "sky_bottom": Color("cfe8f7"),
+		"ground": [Color("6cbf5a"), Color("5aa84d"), Color("8a9a58")], "water": Color("4fa3d9"), "shore": Color("e3d39a"),
+		"track": Color("6e5f50"), "curb": Color("e9dfcc"), "dash": Color("fff6e0"), "glow_road": false,
+		"props": {"tree": 5, "tree2": 4, "pine": 4, "rock": 3, "house": 2, "bush": 4},
+		"laps_to_boss": 2, "boss_loops": 3,
+		"boss": {"name": "STONE GOLEM", "body": Color("8a8f7a"), "eye": Color("ffe14d"), "wave": Color("a8ff6a"), "glow": 0.0,
+			"throws": {"smash": 45, "block": 0, "sweep_low": 25, "sweep_high": 20, "stomp": 10}, "combo": 0.0, "gap_mul": 1.3}},
+	{"name": "DUNES", "radius": 36.0, "sky_top": Color("f0a05a"), "sky_bottom": Color("fbe3b8"),
+		"ground": [Color("e8c98a"), Color("dcb672"), Color("c99a5a")], "water": Color("3fb8c0"), "shore": Color("9cc47a"),
+		"track": Color("6e4e3e"), "curb": Color("c9a06a"), "dash": Color("ffe9c2"), "glow_road": false,
+		"props": {"cactus": 5, "pyramid": 1, "palm": 3, "mesa": 2, "dune": 5},
+		"laps_to_boss": 2, "boss_loops": 4,
+		"boss": {"name": "SAND COLOSSUS", "body": Color("c9a060"), "eye": Color("3fe0ff"), "wave": Color("ffd27a"), "glow": 0.0,
+			"throws": {"smash": 38, "block": 10, "sweep_low": 20, "sweep_high": 20, "stomp": 12}, "combo": 0.12, "gap_mul": 1.15}},
+	{"name": "GLACIER", "radius": 54.0, "sky_top": Color("6f9fd8"), "sky_bottom": Color("e6f2fb"),
+		"ground": [Color("f4fbff"), Color("e2eef7"), Color("cfe0ee")], "water": Color("9cc8e8"), "shore": Color.WHITE,
+		"track": Color("5d7ea8"), "curb": Color.WHITE, "dash": Color("e6f6ff"), "glow_road": false,
+		"props": {"spike": 4, "snowpine": 5, "igloo": 1, "ice_rock": 3, "snowman": 1},
+		"laps_to_boss": 3, "boss_loops": 4,
+		"boss": {"name": "ICE TITAN", "body": Color("bfe3ff"), "eye": Color("29a0ff"), "wave": Color("9fe8ff"), "glow": 0.15,
+			"throws": {"smash": 32, "block": 20, "sweep_low": 16, "sweep_high": 16, "stomp": 16}, "combo": 0.25, "gap_mul": 1.05}},
+	{"name": "EMBER", "radius": 30.0, "sky_top": Color("1a1024"), "sky_bottom": Color("5a2a3a"),
+		"ground": [Color("4a3030"), Color("3a2626"), Color("5a3a32")], "water": Color("ff5a1f"), "shore": Color("2a1a1a"),
+		"track": Color("2c2a30"), "curb": Color("ff7a2a"), "dash": Color("ff9a4a"), "glow_road": true,
+		"props": {"volcano": 2, "shard": 4, "deadtree": 4, "lava": 3, "ash_rock": 4},
+		"laps_to_boss": 3, "boss_loops": 5,
+		"boss": {"name": "MAGMA GIANT", "body": Color("3a2a2a"), "eye": Color("ffc400"), "wave": Color("ff7a2a"), "glow": 0.8,
+			"throws": {"smash": 30, "block": 22, "sweep_low": 15, "sweep_high": 15, "stomp": 18}, "combo": 0.35, "gap_mul": 1.0}},
+]
+var THEME: Dictionary = THEMES[0]    # the current planet
 
 var difficulty := "medium"
 var character := "runner"

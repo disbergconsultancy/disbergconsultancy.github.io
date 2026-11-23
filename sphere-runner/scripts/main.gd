@@ -49,7 +49,18 @@ var meter := 0.0
 var ability_t := 0.0
 var ability_total := 0.0
 var super_active := false
-var debris: Array = []         # [{ "node": MeshInstance3D, "v": Vector3, "life": float }]
+var debris: Array = []
+# Worlds, planet hop and boss
+var boss: BossChase
+var theme_idx := 0
+var world_start := 0.0         # angle at which this planet's laps began
+var world_lap := 0
+var hop_t := 0.0
+var hop_base := 0.0
+var hop_swapped := false
+var test_run := -1             # boss test: planet index (no scores saved), -1 = normal run
+var _sky_mat: ProceduralSkyMaterial
+var _env: Environment         # [{ "node": MeshInstance3D, "v": Vector3, "life": float }]
 
 var _test := {}                # autotest bookkeeping
 
@@ -58,7 +69,10 @@ func _ready() -> void:
 	_build_environment()
 	planet = Planet.new()
 	add_child(planet)
-	planet.build()
+	Config.THEME = Config.THEMES[0]
+	planet.build(Config.THEME)
+	boss = BossChase.new()
+	boss.setup(self)
 	spawner = Spawner.new(planet)
 	character = BlockCharacter.new()
 	add_child(character)
@@ -80,7 +94,8 @@ func _ready() -> void:
 	hud = Hud.new()
 	add_child(hud)
 	hud.play_pressed.connect(start_run)
-	hud.again_pressed.connect(start_run)
+	hud.again_pressed.connect(func(): start_boss_test(test_run) if test_run >= 0 else start_run())
+	hud.boss_test.connect(start_boss_test)
 	hud.menu_pressed.connect(_to_menu)
 	hud.pause_pressed.connect(_toggle_pause)
 	hud.character_changed.connect(func():
@@ -105,6 +120,13 @@ func _ready() -> void:
 				_test["power"] = a.substr(6)
 			elif a == "ability":
 				_test["ability"] = true
+			elif a.begins_with("boss="):     # start a boss test on planet N instead of a normal run
+				_test["boss"] = int(a.substr(5))
+
+
+func _exit_tree() -> void:
+	if is_instance_valid(boss) and not boss.is_inside_tree():
+		boss.free()      # the boss node lives outside the tree between fights
 
 
 func _build_environment() -> void:
@@ -118,6 +140,7 @@ func _build_environment() -> void:
 	sm.ground_horizon_color = th["sky_bottom"]
 	sm.ground_bottom_color = th["sky_bottom"]
 	sky.sky_material = sm
+	_sky_mat = sm
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_energy = 0.3
@@ -126,6 +149,7 @@ func _build_environment() -> void:
 	env.fog_light_color = th["sky_bottom"]
 	env.fog_density = 0.003
 	env.fog_sky_affect = 0.0
+	_env = env
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -142,12 +166,41 @@ func _build_environment() -> void:
 	add_child(camera)
 
 
+## Switch to planet i: rebuild the globe, sky and haze.
+func _set_planet(i: int) -> void:
+	theme_idx = i
+	Config.THEME = Config.THEMES[i]
+	var th: Dictionary = Config.THEME
+	planet.build(th)
+	_sky_mat.sky_top_color = th["sky_top"]
+	_sky_mat.sky_horizon_color = th["sky_bottom"]
+	_sky_mat.ground_horizon_color = th["sky_bottom"]
+	_sky_mat.ground_bottom_color = th["sky_bottom"]
+	_env.fog_light_color = th["sky_bottom"]
+
+
+## Begin this planet's laps (boss after `laps_to_boss` laps).
+func _start_world() -> void:
+	world_start = angle
+	world_lap = 0
+	spawner.reset(angle)
+	spawner.stop_angle = angle + Config.THEME["laps_to_boss"] * TAU - 10.0 / planet.radius
+	if Config.THEME["laps_to_boss"] <= 1:
+		boss.start_intro()
+
+
 # =====================================================================
 # Run flow
 # =====================================================================
 
 func reset() -> void:
+	boss.remove()
+	boss.kills = 0
 	planet.clear_items()
+	hop_t = 0.0
+	hud.fade.color.a = 0.0
+	if theme_idx != 0:
+		_set_planet(0)
 	angle = 0.0
 	planet.rotation.x = 0.0
 	speed = Config.diff()["start"]
@@ -181,12 +234,13 @@ func reset() -> void:
 		d["node"].queue_free()
 	debris.clear()
 	spawner.speed = speed
-	spawner.reset(angle)
+	_start_world()
 	spawner.update(angle)
 	_update_hud()
 
 
 func start_run() -> void:
+	test_run = -1
 	spawner.allow_powers = true
 	sfx.enabled = Config.sound
 	reset()
@@ -240,15 +294,76 @@ func crash(it: Item = null) -> void:
 	Input.vibrate_handheld(80)
 
 
+## Boss test: start on planet i's final lap, ~160 m before the chase, at mid-run speed.
+func start_boss_test(i: int) -> void:
+	start_run()
+	test_run = i
+	planet.clear_items()
+	_set_planet(i)
+	var d: Dictionary = Config.diff()
+	speed = d["start"] + (d["max"] - d["start"]) * 0.4
+	_start_world()
+	world_lap = Config.THEME["laps_to_boss"] - 1
+	world_start = angle - world_lap * TAU - (TAU - 160.0 / planet.radius)
+	spawner.stop_angle = world_start + Config.THEME["laps_to_boss"] * TAU - 10.0 / planet.radius
+	spawner.speed = speed
+	spawner.spawned = 3
+	spawner.update(angle)
+	boss.start_intro()
+	hud.flash("BOSS TEST")
+
+
+func on_boss_defeated() -> void:
+	boss.remove()
+	start_hop()
+
+
+func start_hop() -> void:
+	hop_t = Config.HOP_TIME
+	hop_swapped = false
+	hop_base = py
+	pw["orbit"] = 0.0
+	slide_t = 0.0
+	vy = 0.0
+	pw["invuln"] = Config.HOP_TIME + 1.2
+	hud.flash("PLANET HOP!")
+	sfx.play("ability")
+
+
+## Flip high into the air; at the top the screen flashes white and the next planet appears.
+func _update_hop(dt: float) -> void:
+	hop_t = maxf(0.0, hop_t - dt)
+	var u := 1.0 - hop_t / Config.HOP_TIME
+	py = sin(PI * u) * Config.HOP_H + (1.0 - u) * hop_base
+	grounded = false
+	hud.fade.color.a = maxf(0.0, 1.0 - absf(u - 0.5) * 5.0)
+	if not hop_swapped and u >= 0.5:
+		hop_swapped = true
+		boss.remove()
+		planet.clear_items()
+		_set_planet((theme_idx + 1) % Config.THEMES.size())
+		_start_world()
+		hud.flash(Config.THEME["name"])
+	if hop_t <= 0.0:
+		hud.fade.color.a = 0.0
+		py = maxf(py, 0.0)
+		vy = -5.0
+
+
 func _game_over() -> void:
 	state = "over"
+	if test_run >= 0:
+		hud.show_over("Score %d · Coins %d\n%s" % [score(), coins,
+			"%s DEFEATED" % Config.THEMES[test_run]["boss"]["name"] if boss.kills > 0
+			else ("%d m left to pass it" % int(boss.dist - boss.done) if boss.phase == "fight" else "Chase not reached")], "Boss test (not saved)")
+		return
 	var s := score()
 	var is_best := s > best
-	if is_best:
+	if is_best and test_run < 0:
 		best = s
 		_save_best()
-	hud.show_over("Score %d%s\nBest %d\nLaps %d · Coins %d\nDistance %d m · Close calls %d" % [
-		s, "  NEW BEST!" if is_best else "", best, lap, coins, int(dist), close_calls])
+	hud.show_over("Score %d%s\nBest %d\nLaps %d · Coins %d\nDistance %d m · Close calls %d\nBosses defeated %d" % [
+		s, "  NEW BEST!" if is_best else "", best, lap, coins, int(dist), close_calls, boss.kills])
 
 
 func _on_tap() -> void:
@@ -442,12 +557,23 @@ func step(dt: float) -> void:
 	dist += speed * dt
 	pts += speed * dt * _mult()
 	planet.rotation.x = fmod(angle, TAU)
-	var new_lap := int(angle / TAU)
-	if new_lap > lap:
-		lap = new_lap
-		speed = minf(d["max"], speed + Config.LAP_BONUS)
-		hud.flash("LAP %d" % (lap + 1))
-		sfx.play("lap")
+	var wl := int((angle - world_start) / TAU)
+	if wl > world_lap and hop_t <= 0.0:
+		world_lap = wl
+		lap += 1
+		if world_lap == Config.THEME["laps_to_boss"]:
+			boss.start_fight()                     # laps done: the chase starts
+			sfx.play("ability")
+		elif boss.phase == "none":
+			speed = minf(d["max"], speed + Config.LAP_BONUS)
+			if world_lap == Config.THEME["laps_to_boss"] - 1:
+				boss.start_intro()                 # final lap: the boss shows up on the horizon
+			else:
+				hud.flash("LAP %d" % (world_lap + 1))
+			sfx.play("lap")
+	if hop_t > 0.0:
+		_update_hop(dt)
+	boss.update(dt)
 	if combo_t > 0.0:
 		combo_t -= dt
 		if combo_t <= 0.0:
@@ -500,6 +626,9 @@ func _surface_under_player() -> float:
 
 func _move_player(dt: float) -> void:
 	var cd := Config.char_def()
+	if hop_t > 0.0:
+		px = move_toward(px, lane * Config.LANE_W, Config.LANE_SPEED * dt)
+		return
 	px = move_toward(px, lane * Config.LANE_W, Config.LANE_SPEED * cd["lane_mul"] * (2.0 if dash_t > 0.0 else 1.0) * dt)
 	if pw["orbit"] > 0.0:
 		py += (Config.ORBIT_H - py) * minf(1.0, dt * 3.0)   # float high above the globe
@@ -561,6 +690,8 @@ func _collide() -> void:
 			it.parts[0]["y"] = it.y0 + 0.225
 			planet.place_item(it)
 			d = _ahead_m(it)
+		if it.kind == "MARK" or it.fly_t >= 0.0:
+			continue
 		var overlap_z := absf(d) <= it.hd + hd
 		var overlap_x := absf(it.x - px) <= it.hw + hw
 		# Close calls: clearing an obstacle by a small margin.
@@ -632,6 +763,7 @@ func _render(dt: float) -> void:
 	character.scale = Vector3(1.0 / sqrt(sq), sq, 1.0 / sqrt(sq))
 	character.update_pose(dt, state, {
 		"grounded": grounded, "slide": slide_t, "vy": vy, "speed": speed,
+		"hop": 1.0 - hop_t / Config.HOP_TIME if hop_t > 0.0 else -1.0, "orbit": pw["orbit"] > 0.0,
 		"floating": swipe.holding and float_t > 0.0 and float_t < Config.char_def()["float_time"] and vy < 3.0,
 		"lean": px - lane * Config.LANE_W, "twist": (lane * Config.LANE_W - px) if dash_t > 0.0 else 0.0})
 	hitbox.scale = Vector3(Config.PLAYER_SIZE.x, h, Config.PLAYER_SIZE.z)
@@ -642,7 +774,7 @@ func _render(dt: float) -> void:
 				p["node"].rotate_object_local(Vector3.UP, dt * 4.0)
 	# Camera follows sideways and rises a little with jumps.
 	cam_x += (px * 0.6 - cam_x) * minf(1.0, dt * 8.0)
-	cam_y += ((py * 1.1 if pw["orbit"] > 0.0 else py * 0.6) - cam_y) * minf(1.0, dt * 3.0)
+	cam_y += ((py * 1.1 if pw["orbit"] > 0.0 or hop_t > 0.0 else py * 0.6) - cam_y) * minf(1.0, dt * 3.0)
 	var off := Vector3.ZERO
 	if shake > 0.0:
 		shake = maxf(0.0, shake - dt)
@@ -654,7 +786,17 @@ func _render(dt: float) -> void:
 
 func _update_hud() -> void:
 	hud.score_label.text = str(score())
-	hud.info_label.text = "Coins %d\nLap %d\n%d km/h" % [coins, lap + 1, int(speed * 3.6)]
+	var where: String = "Boss chase" if boss.phase == "fight" or boss.phase == "down" else "Lap %d/%d" % [mini(world_lap + 1, Config.THEME["laps_to_boss"]), Config.THEME["laps_to_boss"]]
+	hud.info_label.text = "Coins %d\n%s\n%d km/h\n%s" % [coins, where, int(speed * 3.6), Config.THEME["name"].capitalize()]
+	match boss.phase:
+		"intro":
+			hud.set_boss(true, Config.THEME["boss"]["name"], 0.0, "waiting at the end of this lap")
+		"fight":
+			hud.set_boss(true, Config.THEME["boss"]["name"], boss.progress(), "%d m to pass it" % int(boss.dist - boss.done))
+		"down":
+			hud.set_boss(true, Config.THEME["boss"]["name"], 1.0, "DEFEATED")
+		_:
+			hud.set_boss(false)
 	hud.combo_label.text = "COMBO x%d  (%d)" % [_combo_mult(), combo] if combo >= 3 else ""
 	var list: Array[String] = []
 	for k in ["magnet", "orbit", "x2"]:
@@ -707,6 +849,51 @@ func _sim(seconds: float, dt: float) -> float:
 		_update_debris(gdt)
 		peak = maxf(peak, py)
 	return peak
+
+
+func _autotest_phase3(dt: float) -> void:
+	# Long blocks must have their length (roof route).
+	god = true
+	start_run()
+	var plat := planet.add_item("PLATFORM", angle + 30.0 / planet.radius, 0.0, {"depth": 18.0})
+	print("AUTOTEST long block: depth %.1f m, %d segments" % [plat.hd * 2.0, plat.parts.size()])
+	# A boss test per planet: the chase, throws, defeat and the hop to the next planet.
+	for i in Config.THEMES.size():
+		god = true
+		start_boss_test(i)
+		var kinds := {}
+		var t := 0.0
+		var fight_at := -1.0
+		while t < 120.0:
+			step(dt)
+			_update_debris(dt)
+			t += dt
+			for it in planet.items:
+				if it.boss:
+					kinds[it.kind] = true
+			if fight_at < 0.0 and boss.phase == "fight":
+				fight_at = t
+			if (theme_idx != i and hop_t <= 0.0) or state != "run":
+				break
+		print("AUTOTEST boss %s: chase began at %.1f s, finished at %.1f s, kills %d, now on %s | throws: %s" % [
+			Config.THEMES[i]["boss"]["name"], fight_at, t, boss.kills, Config.THEME["name"], ", ".join(kinds.keys())])
+	# A boss throw hits when it lands: god off, stand in a lane where a boulder lands.
+	god = true                   # invincible during the run-up, then real collisions in the chase
+	start_boss_test(0)
+	var guard := 0
+	while boss.phase != "fight" and guard < 60 * 60:
+		step(dt)
+		guard += 1
+	god = false
+	var t2 := 0.0
+	while t2 < 30.0 and state == "run":
+		for it in planet.items:     # steer into the next landed boulder
+			if it.kind == "FIST" and it.fly_t < 0.0 and _ahead_m(it) > 0.0:
+				lane = int(round(it.x / Config.LANE_W))
+				break
+		step(dt)
+		t2 += dt
+	print("AUTOTEST running into boss boulders: state %s after %.1f s of chase" % [state, t2])
 
 
 func _autotest_phase2(dt: float) -> void:
@@ -769,7 +956,10 @@ func _autotest_tick() -> void:
 		_test["done"] = true
 		if not _test["menu"]:
 			god = true
-			start_run()
+			if _test.has("boss"):
+				start_boss_test(_test["boss"])
+			else:
+				start_run()
 			var n := int(_test["t"] * 60.0)
 			for i in n:
 				if i == n - 90:
@@ -836,6 +1026,9 @@ func _autotest_tick() -> void:
 		_test["phase"] = "phase2"
 	elif _test["phase"] == "phase2":
 		_autotest_phase2(dt)
+		_test["phase"] = "phase3"
+	elif _test["phase"] == "phase3":
+		_autotest_phase3(dt)
 		_test["phase"] = "real"
 	elif _test["phase"] == "real":
 		god = false

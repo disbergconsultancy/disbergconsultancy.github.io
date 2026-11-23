@@ -159,6 +159,16 @@ static func p_land() -> Dictionary:
 		"arm_lx": 0.5, "arm_rx": 0.5, "arm_lz": -0.4, "arm_rz": 0.4, "fore_l": 0.6, "fore_r": 0.6}
 
 
+static func p_tuck() -> Dictionary:
+	return {"spine": -0.5, "head": -0.3, "thigh_lx": 1.9, "thigh_rx": 1.9, "shin_l": -2.2, "shin_r": -2.2,
+		"arm_lx": 1.2, "arm_rx": 1.2, "fore_l": 1.6, "fore_r": 1.6}
+
+
+static func p_orbit(t: float) -> Dictionary:
+	return {"rx": -1.35, "head": 1.1, "arm_rx": 3.0, "arm_rz": 0.05, "arm_lx": 0.2, "arm_lz": -0.25, "fore_l": 0.4,
+		"thigh_lx": -0.05 + 0.08 * sin(t * 6.0), "thigh_rx": 0.3, "shin_r": -0.7, "shin_l": -0.1}
+
+
 static func p_hit() -> Dictionary:
 	return {"y": -0.45, "rx": 1.45, "head": 0.4, "arm_lx": 2.6, "arm_rx": 2.2, "arm_lz": -0.9, "arm_rz": 0.9,
 		"thigh_lx": 0.9, "thigh_rx": 0.4, "shin_l": -0.5, "shin_r": -0.2}
@@ -175,6 +185,10 @@ func update_pose(dt: float, state: String, s: Dictionary) -> void:
 		target = p_idle(t)
 	elif state == "hit" or state == "over":
 		target = p_hit()
+	elif s.get("hop", -1.0) >= 0.0:
+		target = p_tuck()
+	elif s.get("orbit", false):
+		target = p_orbit(t)
 	elif s["grounded"]:
 		if s["slide"] > 0.0:
 			target = p_slide()
@@ -197,7 +211,8 @@ func update_pose(dt: float, state: String, s: Dictionary) -> void:
 	pivot.position.y = hip_y + pose["y"]
 	var lean: float = s["lean"] * 0.12
 	var twist: float = s["twist"] * 0.35
-	pivot.rotation = Vector3(pose["rx"], pose["ry"] + twist, pose["rz"] + lean)
+	var flip: float = -s.get("hop", -1.0) * TAU if s.get("hop", -1.0) >= 0.0 else 0.0   # forward somersault on a planet hop
+	pivot.rotation = Vector3(pose["rx"] + flip, pose["ry"] + twist, pose["rz"] + lean)
 	j["spine"].rotation.x = pose["spine"]
 	j["head"].rotation.x = pose["head"]
 	j["arm_l"].rotation = Vector3(pose["arm_lx"], 0, pose["arm_lz"])

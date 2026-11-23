@@ -19,3 +19,8 @@ var move_amp := 0.0
 var move_speed := 0.0
 var move_phase := 0.0
 var power := ""         # for power-ups: magnet | shield | orbit | x2
+var boss := false       # thrown by the boss (cleared when it is defeated)
+var fly_t := -1.0       # boss throw in flight: elapsed time (-1 = not flying)
+var fly_dur := 0.9
+var marks: Array = []   # red markers to hide when the throw lands
+var vel := 0.0          # stomp waves roll toward the runner (m/s)

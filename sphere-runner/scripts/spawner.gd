@@ -17,6 +17,7 @@ var calm_next := false
 var speed := 10.0          # current run speed, set by the game each frame
 var allow_powers := false  # power-ups only during a run (not behind the menu)
 var power_in := 90.0       # metres until the next power-up
+var stop_angle := INF      # no patterns past this point (the boss chase starts there)
 var rng := RandomNumberGenerator.new()
 
 
@@ -36,7 +37,7 @@ func reset(start_angle: float) -> void:
 func update(angle: float) -> void:
 	var r := planet.radius
 	var d: Dictionary = Config.diff()
-	while next_spawn < angle + Config.SPAWN_AHEAD_M / r:
+	while next_spawn < angle + Config.SPAWN_AHEAD_M / r and next_spawn < stop_angle:
 		var chunk := "calm" if calm_next else _pick_chunk()
 		if calm_next:
 			calm_next = false
@@ -156,7 +157,7 @@ func _chunk_platform_run(phi: float) -> float:
 	var length := 14.0 + rng.randf() * 10.0
 	var top: float = Config.KIND["PLATFORM"]["h"]
 	planet.add_item("RAMP", _at(phi, 2.5), Config.lane_x(lane))
-	planet.add_item("PLATFORM", _at(phi, 5.0 + length / 2.0), Config.lane_x(lane), {"len": length})
+	planet.add_item("PLATFORM", _at(phi, 5.0 + length / 2.0), Config.lane_x(lane), {"depth": length})
 	_coin_line(phi, lane, 6.0, 4.0 + length, top + 0.4, 2.0)
 	var others := [-1, 0, 1].filter(func(l): return l != lane)
 	var m := 8.0
@@ -171,7 +172,7 @@ func _chunk_platform_run(phi: float) -> float:
 func _chunk_corridor(phi: float) -> float:
 	var length := 22.0
 	for l in [-1, 1]:
-		planet.add_item("PLATFORM", _at(phi, length / 2.0), Config.lane_x(l), {"len": length})
+		planet.add_item("PLATFORM", _at(phi, length / 2.0), Config.lane_x(l), {"depth": length})
 	planet.add_item("LOW", _at(phi, 5.0), 0.0)
 	planet.add_item("HIGH", _at(phi, 12.0), 0.0)
 	planet.add_item("LOW", _at(phi, 19.0), 0.0)

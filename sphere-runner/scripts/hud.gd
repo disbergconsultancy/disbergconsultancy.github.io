@@ -8,6 +8,7 @@ signal again_pressed
 signal menu_pressed
 signal pause_pressed
 signal character_changed
+signal boss_test(index: int)
 
 var score_label: Label
 var info_label: Label
@@ -17,6 +18,7 @@ var pop_label: Label
 var menu_panel: PanelContainer
 var over_panel: PanelContainer
 var over_text: Label
+var over_title: Label
 var best_label: Label
 var pause_button: Button
 var diff_buttons := {}
@@ -27,6 +29,11 @@ var powers_label: Label
 var meter_bg: Panel
 var meter_fill: ColorRect
 var meter_label: Label
+var fade: ColorRect
+var boss_box: VBoxContainer
+var boss_name: Label
+var boss_fill: ColorRect
+var boss_sub: Label
 var _flash_t := 0.0
 var _pop_t := 0.0
 
@@ -51,6 +58,12 @@ func _ready() -> void:
 	powers_label = _label(24, HORIZONTAL_ALIGNMENT_LEFT, VERTICAL_ALIGNMENT_BOTTOM, Vector2(24, 0))
 	powers_label.offset_bottom = -40
 	_build_meter()
+	_build_boss_bar()
+	fade = ColorRect.new()
+	fade.color = Color(1, 1, 1, 0)
+	fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(fade)
+	fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_menu()
 	_build_over()
 	show_menu()
@@ -86,6 +99,46 @@ func _build_meter() -> void:
 	meter_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
 	meter_label.add_theme_constant_override("outline_size", 6)
 	meter_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
+## Boss name, chase progress and metres left, below the top HUD.
+func _build_boss_bar() -> void:
+	boss_box = VBoxContainer.new()
+	boss_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(boss_box)
+	boss_box.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	boss_box.offset_left = -180
+	boss_box.offset_right = 180
+	boss_box.offset_top = 140
+	boss_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	boss_name = _text(boss_box, "", 30)
+	boss_name.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.75))
+	boss_name.add_theme_constant_override("outline_size", 8)
+	var bg := Panel.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0.4)
+	sb.set_corner_radius_all(8)
+	bg.add_theme_stylebox_override("panel", sb)
+	bg.custom_minimum_size = Vector2(340, 18)
+	bg.clip_contents = true
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	boss_box.add_child(bg)
+	boss_fill = ColorRect.new()
+	boss_fill.color = Color("ff3a3a")
+	boss_fill.size = Vector2(0, 18)
+	bg.add_child(boss_fill)
+	boss_sub = _text(boss_box, "", 20)
+	boss_sub.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.75))
+	boss_sub.add_theme_constant_override("outline_size", 6)
+	boss_box.visible = false
+
+
+func set_boss(visible_: bool, name := "", progress := 0.0, sub := "") -> void:
+	boss_box.visible = visible_
+	if visible_:
+		boss_name.text = name
+		boss_fill.size = Vector2(340.0 * clampf(progress, 0.0, 1.0), 18)
+		boss_sub.text = sub
 
 
 func set_meter(fraction: float, color: Color, text: String, pulse: bool) -> void:
@@ -200,6 +253,18 @@ func _build_menu() -> void:
 	box.add_child(sound_toggle)
 	_button(box, "Play", Color("3d8bff")).pressed.connect(func(): play_pressed.emit())
 	best_label = _text(box, "", 22)
+	_text(box, "Boss test: start just before a boss (not saved)", 20)
+	var brow := HBoxContainer.new()
+	brow.add_theme_constant_override("separation", 8)
+	box.add_child(brow)
+	for i in Config.THEMES.size():
+		var b := Button.new()
+		b.text = Config.THEMES[i]["boss"]["name"].split(" ")[-1].capitalize()
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.custom_minimum_size = Vector2(0, 56)
+		b.add_theme_font_size_override("font_size", 22)
+		b.pressed.connect(func(): boss_test.emit(i))
+		brow.add_child(b)
 
 
 func _set_difficulty(d: String) -> void:
@@ -221,7 +286,7 @@ func _build_over() -> void:
 	var pb := _panel()
 	over_panel = pb[0]
 	var box: VBoxContainer = pb[1]
-	_text(box, "Crashed", 48)
+	over_title = _text(box, "Crashed", 48)
 	over_text = _text(box, "", 28)
 	_button(box, "Run again", Color("3d8bff")).pressed.connect(func(): again_pressed.emit())
 	_button(box, "Menu", Color(1, 1, 1, 0.15)).pressed.connect(func(): menu_pressed.emit())
@@ -232,6 +297,7 @@ func show_menu(best := 0) -> void:
 	over_panel.visible = false
 	pause_button.visible = false
 	meter_bg.visible = false
+	boss_box.visible = false
 	best_label.text = "Best: %d" % best
 
 
@@ -242,7 +308,8 @@ func show_run() -> void:
 	meter_bg.visible = true
 
 
-func show_over(text: String) -> void:
+func show_over(text: String, title := "Crashed") -> void:
+	over_title.text = title
 	over_text.text = text
 	over_panel.visible = true
 	pause_button.visible = false
