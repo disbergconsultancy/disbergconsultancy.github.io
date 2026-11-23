@@ -445,34 +445,24 @@ function buildArena(th) {
   arena.add(shock.mesh);
 }
 
-// The boss: a giant block figure standing in the middle of the ring, facing the runner (+X).
+// The boss: for now a single big block (placeholder, like the runner started as a box),
+// with two glowing eyes so you can see it facing the runner (+X).
+const BOSS_SIZE = 13;
 function buildBoss(th) {
   const b = th.boss, g = new THREE.Group(), mats = [];
   const M = (c, e = 0) => { const m = new THREE.MeshLambertMaterial({ color: c, flatShading: true, emissive: e ? c : 0x000000, emissiveIntensity: e }); m.userData = { e, c: e ? c : 0 }; mats.push(m); return m; };
-  const bodyM = M(b.body), accM = M(b.accent, b.glow || 0), eyeM = M(b.eye, 1);
-  const add = (parent, w, h, d, m, x, y, z) => { const o = new THREE.Mesh(boxGeo, m); o.scale.set(w, h, d); o.position.set(x, y, z); parent.add(o); return o; };
-  const body = new THREE.Group(); g.add(body);
-  for (const s of [-1, 1]) { add(body, 4, 8, 4, bodyM, 0, 4, s * 3.6); add(body, 5, 1.6, 5, accM, 0.4, 0.8, s * 3.6); }
-  add(body, 9, 11, 13, bodyM, 0, 13.5, 0);                       // torso
-  add(body, 9.6, 2.6, 13.6, accM, 0, 19, 0);                     // shoulder band
-  add(body, 1, 5, 6, accM, 4.6, 13, 0);                          // chest plate (facing the runner)
-  const head = new THREE.Group(); head.position.set(0, 20.4, 0); body.add(head);
-  add(head, 6, 5, 6, bodyM, 0, 2.5, 0);
-  for (const s of [-1, 1]) add(head, 0.5, 1.1, 1.6, eyeM, 3.05, 3, s * 1.4);
-  add(head, 6.6, 1.2, 6.6, accM, 0, 5.4, 0);
-  const arms = [];
-  for (const s of [-1, 1]) {
-    const sh = new THREE.Group(); sh.position.set(0, 18, s * 8.6); body.add(sh);
-    add(sh, 3.2, 9, 3.2, bodyM, 0, -4.5, 0);
-    add(sh, 4.8, 4.8, 4.8, accM, 0, -10.5, 0);                   // fist
-    arms.push({ g: sh, t: -1, dur: 1 });
+  const body = new THREE.Group(); g.add(body);           // pivot at the ground: leans and hops happen here
+  const cube = new THREE.Mesh(boxGeo, M(b.body, b.glow ? b.glow * 0.3 : 0));
+  cube.scale.setScalar(BOSS_SIZE); cube.position.y = BOSS_SIZE / 2; body.add(cube);
+  for (const sz of [-1, 1]) {
+    const eye = new THREE.Mesh(boxGeo, M(b.eye, 1));
+    eye.scale.set(0.4, 1.4, 2.2); eye.position.set(BOSS_SIZE / 2 + 0.1, BOSS_SIZE * 0.68, sz * 2.6); body.add(eye);
   }
-  body.scale.setScalar(0.8);
   // Stands a little ahead of the ring centre (still clear of the track) so it sits in view, facing the camera.
   g.position.set(-R + 4, R, -8);
   g.rotation.y = -0.59;
   scene.add(g);
-  return { g, body, head, arms, mats, flashT: 0 };
+  return { g, body, mats, flashT: 0, windT: -1, windDur: 1 };
 }
 
 function enterArena() {
@@ -507,7 +497,7 @@ function newDrop() { return { t: 0, dur: 0.55, h: 16 }; }
 function markLanes(phi, lanes, list) {
   for (const l of lanes) list.push(addItem('MARK', phi, LX(l), { w: LANE_W * 0.9, len: 2.6 }));
 }
-function swingArm(i, dur) { const a = bossObj.arms[i]; a.t = 0; a.dur = dur; }
+function swingArm(i, dur) { bossObj.windT = 0; bossObj.windDur = dur; }   // wind-up lean; i kept for later arms
 function attackAt(kind, phi) {
   const marks = [];
   if (kind === 'smash') {                     // red fist on one lane: switch lanes
@@ -578,13 +568,12 @@ function updateBoss(dt) {
     if (B.flashT > 0) { m.emissive.setHex(0xffffff); m.emissiveIntensity = 0.8; }
     else { m.emissive.setHex(m.userData.c); m.emissiveIntensity = m.userData.e; }
   }
-  // Arms: wind up, then slam when the attack lands.
-  for (const a of B.arms) {
-    if (a.t < 0) { a.g.rotation.z += (0 - a.g.rotation.z) * Math.min(1, dt * 3); continue; }
-    a.t += dt;
-    const u = a.t / a.dur;
-    a.g.rotation.z = u < 0.65 ? 2.6 * (u / 0.65) : u < 0.8 ? 2.6 - 1.5 * ((u - 0.65) / 0.15) : 1.1;
-    if (u > 1.4) a.t = -1;
+  // Wind-up: lean back, then pitch forward toward the track when the attack lands.
+  if (B.windT >= 0 && bossState === 'fight') {
+    B.windT += dt;
+    const u = B.windT / B.windDur;
+    B.body.rotation.z = u < 0.65 ? 0.18 * (u / 0.65) : u < 0.8 ? 0.18 - 0.48 * ((u - 0.65) / 0.15) : -0.3 * Math.max(0, 1 - (u - 0.8) / 0.6);
+    if (u > 1.4) { B.windT = -1; B.body.rotation.z = 0; }
   }
   // Stomp: crouch, jump, land -> shockwave.
   if (stompT > 0) {
@@ -596,8 +585,7 @@ function updateBoss(dt) {
       shake = Math.max(shake, 0.4); sfx.thud();
     }
   } else if (bossState === 'fight') {
-    B.body.position.y = Math.sin(t * 1.6) * 0.25;
-    B.head.rotation.y = Math.sin(t * 0.7) * 0.15;
+    B.body.position.y = Math.max(0, Math.sin(t * 1.6)) * 0.3;
   }
   if (shock.active) {
     shock.r += 13 * dt;
