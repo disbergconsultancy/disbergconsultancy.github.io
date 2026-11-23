@@ -977,8 +977,10 @@ func _autotest_phase4(dt: float) -> void:
 	_sim(2.5, dt)
 	print("AUTOTEST jumper meteor: smashes on landing %d" % (smashes - s_before))
 	meter = 0.0
-	_spawn_ahead("LOW", 10.0)
-	_sim(0.15, dt)
+	_sim(1.0, dt)
+	var crate := _spawn_ahead("LOW", 12.0)
+	while _ahead_m(crate) > 3.0:      # jump about 3 m before the crate
+		_sim(dt, dt)
 	_on_action("up")
 	_sim(1.2, dt)
 	print("AUTOTEST jumper vault over a crate: meter %.2f (expected ~0.06)" % meter)
