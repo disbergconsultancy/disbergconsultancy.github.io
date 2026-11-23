@@ -275,7 +275,7 @@ const TREES = {
     ] },
     { name: 'Focus', color: '#8fa2ff', nodes: [
       { id: 'charge', name: 'Charge', tier: 0, max: 4, text: r => `Meter fills ${10 * r}% faster`, apply: (s, r) => { s.meterMul *= 1 + 0.1 * r; } },
-      { id: 'deep', name: 'Deep Focus', tier: 1, max: 3, text: r => `Focus lasts ${(3 + 0.5 * r).toFixed(1)} s (was 3)`, apply: (s, r) => { s.abilityTime += 0.5 * r; } },
+      { id: 'readthrow', name: 'Read the Throw', tier: 1, max: 3, boss: true, text: r => `Focus +${(0.3 * r).toFixed(1)} s; boss throws land ${2 * r} m further ahead (more warning)`, apply: (s, r) => { s.abilityTime += 0.3 * r; s.throwLead += 2 * r; } },
       { id: 'still', name: 'Stillness', tier: 2, max: 3, text: r => `Focus slows the game to ${45 - 4 * r}% speed (was 45%)`, apply: (s, r) => { s.focusSlow = 0.45 - 0.04 * r; } },
       { id: 'field', name: 'Focus Field', tier: 3, max: 1, text: () => 'During Focus, nearby coins fly to you', apply: s => { s.focusMagnet = true; } },
     ] },
@@ -283,9 +283,9 @@ const TREES = {
   smasher: [
     { name: 'Demolition', color: '#ff8a2a', nodes: [
       { id: 'fuel', name: 'Fuel', tier: 0, max: 4, text: r => `Meter fills ${8 * r}% faster`, apply: (s, r) => { s.meterMul *= 1 + 0.08 * r; } },
-      { id: 'momentum', name: 'Momentum', tier: 1, max: 3, text: r => `Each smash adds ${(0.4 + 0.1 * r).toFixed(1)} s (was 0.4)`, apply: (s, r) => { s.smashExtend += 0.1 * r; } },
+      { id: 'wreck', name: 'Wrecking Ball', tier: 1, max: 3, boss: true, text: r => `Each smash adds ${(0.4 + 0.1 * r).toFixed(1)} s (was 0.4); during Smash, boss throws aimed at you shatter in mid-air`, apply: (s, r) => { s.smashExtend += 0.1 * r; s.wreck = true; } },
       { id: 'overdrive', name: 'Overdrive', tier: 2, max: 3, text: r => `Smash can last up to ${(5 + 0.5 * r).toFixed(1)} s (was 5)`, apply: (s, r) => { s.abilityMax += 0.5 * r; } },
-      { id: 'shockwave', name: 'Shockwave', tier: 3, max: 1, text: () => 'Smashing a block also smashes the blocks beside it in the same row', apply: s => { s.shockwave = true; } },
+      { id: 'aftershock', name: 'Aftershock', tier: 3, max: 1, text: () => 'When Smash ends, a blast clears every block in the next 10 m', apply: s => { s.aftershock = true; } },
     ] },
     { name: 'Bulk', color: '#aab6cc', nodes: [
       { id: 'legs', name: 'Power Legs', tier: 0, max: 4, text: r => `Jump ${5 * r}% higher`, apply: (s, r) => heightUp(s, 0.05 * r) },
@@ -309,7 +309,7 @@ const TREES = {
     ] },
     { name: 'Leap', color: '#d4ff3d', nodes: [
       { id: 'windup', name: 'Wind Up', tier: 0, max: 4, text: r => `Meter fills ${8 * r}% faster`, apply: (s, r) => { s.meterMul *= 1 + 0.08 * r; } },
-      { id: 'strato', name: 'Stratosphere', tier: 1, max: 3, text: r => `Super jump ${10 * r}% higher`, apply: (s, r) => { s.superMul *= Math.sqrt(1 + 0.1 * r); } },
+      { id: 'vault', name: 'Vault', tier: 1, max: 3, boss: true, text: r => `Jumping a boss throw or stomp wave fills ${5 * r}% meter, a crate ${2 * r}%`, apply: (s, r) => { s.vaultBoss += 0.05 * r; s.vaultCrate += 0.02 * r; } },
       { id: 'hang', name: 'Hang Time', tier: 2, max: 3, text: r => `Hover ${(0.25 * r).toFixed(2)} s at the top of a super jump`, apply: (s, r) => { s.hangTime += 0.25 * r; } },
       { id: 'meteor', name: 'Meteor', tier: 3, max: 1, text: () => 'Landing from a super jump smashes the blocks just ahead', apply: s => { s.meteor = true; } },
     ] },
@@ -322,7 +322,12 @@ const TREES = {
   ],
 };
 
-function loadProg(c) { return store.get('prog_' + c, null) || { lvl: 1, xp: 0, alloc: {} }; }
+const RENAMED = { deep: 'readthrow', momentum: 'wreck', shockwave: 'aftershock', strato: 'vault' };
+function loadProg(c) {
+  const p = store.get('prog_' + c, null) || { lvl: 1, xp: 0, alloc: {} };
+  for (const [o, n] of Object.entries(RENAMED)) if (p.alloc[o]) { p.alloc[n] = (p.alloc[n] || 0) + p.alloc[o]; delete p.alloc[o]; }
+  return p;
+}
 function saveProg(c, p) { store.set('prog_' + c, p); }
 const spentPoints = p => Object.values(p.alloc).reduce((a, b) => a + b, 0);
 const freePoints = p => (p.lvl - 1) - spentPoints(p);
@@ -336,7 +341,7 @@ function computeStats(c = opts.char) {
     nearMiss: 0, closeBonus: 0, meterMul: d.meterMul || 1, abilityTime: d.abilityTime, abilityMax: d.abilityMax || d.abilityTime,
     smashExtend: d.smashExtend || 0, focusSlow: 0.45, focusMagnet: false, airDashMul: 1, doubleJump: false, slamMul: 1,
     shockwave: false, ram: false, smashPts: 0, coinMul: 1, smashCombo: 0, jackpot: false, superMul: 1, hangTime: 0,
-    meteor: false, airCoinMul: 1, updraft: false };
+    meteor: false, airCoinMul: 1, updraft: false, throwLead: 0, wreck: false, aftershock: false, vaultBoss: 0, vaultCrate: 0 };
   const p = loadProg(c);
   for (const br of TREES[c]) for (const n of br.nodes) { const r = p.alloc[n.id] || 0; if (r) n.apply(s, r); }
   s.abilityMax = Math.max(s.abilityMax, s.abilityTime);
@@ -507,7 +512,7 @@ function scheduleAttacks(dt) {
   attackT -= dt;
   if (attackT > 0) return;
   // Land between you and the boss, as far ahead as possible so the red marker gives time to react.
-  const bt = theme.boss, target = Math.min(30, ahead - BOSS_SIZE / 2 - 2);
+  const bt = theme.boss, target = Math.min(30 + ST.throwLead, ahead - BOSS_SIZE / 2 - 2);
   const lvl = Math.floor(bossProgress() * theme.bossLoops), last = lvl >= theme.bossLoops - 1;
   attackT = Math.max(14, speed * (1.15 - 0.07 * lvl - (last ? 0.1 : 0)) * bt.gapMul) / Math.max(speed, 1);
   if (target < 13) return;                     // too close to throw: you are about to pass it
@@ -577,6 +582,11 @@ function updateThrows(dt) {
     f.t = Math.min(f.dur, f.t + dt);
     const u = f.t / f.dur;
     if (!bossObj) f.t = f.dur;
+    if (ST.wreck && f.t > f.dur * 0.35 && abilityT > 0 && CH_DEF().ability === 'smash' && it.alive && Math.abs(it.x - px) < it.hw + 0.6) {
+      f.t = f.dur; if (it.marks) for (const m of it.marks) hideItem(m);
+      smashItem(it); pop('WRECKED!');
+      continue;
+    }
     if (f.t < f.dur) {
       const phiB = angle + bossAhead() / R, xB = bossX(), yB = BOSS_LIFT + BOSS_SIZE * 0.5;
       for (const p of it.parts) {
@@ -1605,11 +1615,16 @@ function collide(dt) {
     // Close-call tracking for hazards the player is passing.
     if (HAZARDS.has(it.kind) && !it.passed && it.kind !== 'PLATFORM' && it.kind !== 'PIT') {
       if (overlapZ) {
+        if (!grounded && py >= it.y1 - 0.15 && Math.abs(it.x - px) < it.hw + PLAYER.w / 2) it.vaulted = true;
         const lat = Math.abs(it.x - px) - (it.hw + PLAYER.w / 2);
         const above = py - it.y1, below = it.y0 - (py + ph);
         it.minClear = Math.min(it.minClear, Math.max(lat, above, below));
       } else if (d < -(it.hd + hd)) {
         it.passed = true;
+        if (it.vaulted && (ST.vaultBoss || ST.vaultCrate)) {
+          const gain = it.boss ? ST.vaultBoss : it.kind === 'LOW' ? ST.vaultCrate : 0;
+          if (gain) { const was = meter; meter = Math.min(1, meter + gain); if (was < 1 && meter >= 1) { pop(CH_DEF().label + ' READY'); sfx.ready(); } }
+        }
         if (it.minClear < NEAR_MISS + ST.nearMiss && it.minClear > -0.3 && pw.orbit <= 0) {
           closeCalls++; const b = Math.round((25 + ST.closeBonus) * mult() * comboMult()); pts += b; addCombo(3); pop('CLOSE! +' + b); sfx.close();
           if (ST.updraft && !grounded) meter = Math.min(1, meter + 0.1);
@@ -1658,6 +1673,13 @@ function useAbility() {
   } else { abilityT = ST.abilityTime; abilityTotal = ST.abilityTime; }
 }
 const SMASHABLE = new Set(['LOW', 'HIGH', 'WALL', 'MOVER', 'FIST', 'BLOCK', 'SWEEPLOW', 'SWEEPHIGH', 'SHOCK']);
+// Aftershock (Smasher capstone): when Smash ends, clear every block in the next 10 m.
+function aftershock() {
+  let n = 0;
+  for (const o of items) { const d = aheadM(o); if (o.alive && SMASHABLE.has(o.kind) && d > -1 && d < 10) { smashItem(o, true, false); n++; } }
+  shake = Math.max(shake, 0.4); sfx.thud();
+  if (n) flash('AFTERSHOCK!');
+}
 function meteorStrike() {
   let n = 0;
   for (const o of items) { const d = aheadM(o); if (o.alive && SMASHABLE.has(o.kind) && d > -1 && d < 9) { smashItem(o, true, false); n++; } }
@@ -1676,10 +1698,6 @@ function smashItem(it, score = true, shock = true) {
     const smashing = abilityT > 0 && CH_DEF().ability === 'smash';
     const add = smashing ? Math.max(0, Math.min(ST.smashExtend, ST.abilityMax - abilityTotal)) : 0;
     abilityT += add; abilityTotal += add;
-    if (ST.shockwave && shock && smashing) {
-      const da = aheadM(it);
-      for (const o of items) if (o !== it && o.alive && SMASHABLE.has(o.kind) && Math.abs(aheadM(o) - da) < 1.5) smashItem(o, true, false);
-    }
     pop('SMASH +' + b + (add > 0 ? `  +${add.toFixed(1)}s` : ''));
   }
 }
@@ -1860,6 +1878,7 @@ function frame(now) {
   if (state === 'run' && abilityT > 0) {
     abilityT = Math.max(0, abilityT - dt);
     if (CH_DEF().ability === 'focus') gdt = dt * ST.focusSlow;
+    if (abilityT === 0 && CH_DEF().ability === 'smash' && ST.aftershock) aftershock();
   }
   $('focus').style.opacity = state === 'run' && abilityT > 0 && CH_DEF().ability === 'focus' ? 1 : 0;
   step(gdt);
@@ -2125,7 +2144,7 @@ reset();
 idle();
 requestAnimationFrame(frame);
 window.__game = { get state() { return state; }, get score() { return score(); }, action, startRun,
-  get items() { return items.length; }, get py() { return py; }, get pw() { return pw; }, get kinds() { return items.map(i => i.kind); }, get near() { return items.filter(i => i.alive).map(i => ({ k: i.kind, x: i.x, d: aheadM(i), hd: i.hd })); }, get grounded() { return grounded; }, useAbility, set meter(v) { meter = v; }, get abilityT() { return abilityT; }, get abilityTotal() { return abilityTotal; }, get bossPhase() { return bossPhase; }, get bossLeft() { return bossDist - bossDone; }, get bossAhead() { return bossObj ? bossAhead() : null; }, startBossIntro, startBossFight, startBossTest, spawn: (k, m = 18) => addItem(k, angle + m / R, LX(lane)), get bossKills() { return bossKills; }, get worldLap() { return worldLap; }, get ST() { return ST; }, get smashes() { return smashes; }, get airJumps() { return airJumps; }, set hold(v) { holding = v; }, get pose() { return { ...curPose }; }, get combo() { return combo; }, get theme() { return theme.name; }, get hopT() { return hopT; }, startHop, activate, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
+  get items() { return items.length; }, get py() { return py; }, get pw() { return pw; }, get kinds() { return items.map(i => i.kind); }, get near() { return items.filter(i => i.alive).map(i => ({ k: i.kind, x: i.x, d: aheadM(i), hd: i.hd })); }, get grounded() { return grounded; }, useAbility, set meter(v) { meter = v; }, get abilityT() { return abilityT; }, get abilityTotal() { return abilityTotal; }, get meter() { return meter; }, get bossPhase() { return bossPhase; }, get bossLeft() { return bossDist - bossDone; }, get bossAhead() { return bossObj ? bossAhead() : null; }, startBossIntro, startBossFight, startBossTest, spawn: (k, m = 18) => addItem(k, angle + m / R, LX(lane)), get bossKills() { return bossKills; }, get worldLap() { return worldLap; }, get ST() { return ST; }, get smashes() { return smashes; }, get airJumps() { return airJumps; }, set hold(v) { holding = v; }, get pose() { return { ...curPose }; }, get combo() { return combo; }, get theme() { return theme.name; }, get hopT() { return hopT; }, startHop, activate, get lane() { return lane; }, get R() { return R; }, get lap() { return lap; }, get angle() { return angle; } };
 </script>
 <script>
 window.addEventListener('error', e => { const el = document.getElementById('err'); el.style.display = 'block'; el.textContent = 'Error: ' + e.message; });

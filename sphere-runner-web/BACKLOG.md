@@ -12,9 +12,9 @@ Separate from the per-character skill trees (which stay about play style). See d
 - Prices 100/200/400/700/1100 per level (Stumble guard 400/900/1500); coins saved between runs.
 
 ## Skill tree open decisions
+(Done: boss nodes Read the Throw / Wrecking Ball / Vault; Aftershock replaced Shockwave.)
 - A: Double Jump Jumper-only; Runner capstone Slipstream instead.
 - B: XP tier in the scoring branches.
-- C: one boss-chase node per character.
 - D: fewer, bigger ranks.
 
 ## Retention
