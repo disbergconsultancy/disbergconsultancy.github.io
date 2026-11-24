@@ -182,6 +182,7 @@ static func seg_bar(total: int, cell := Vector2(20, 24), gap := 4) -> PanelConta
 		c.custom_minimum_size = cell
 		c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_bevel(c, cell)
 		bar.add_child(c)
 	set_bar(bar, 0.0, Color.WHITE)
 	var frame := PanelContainer.new()
@@ -193,6 +194,33 @@ static func seg_bar(total: int, cell := Vector2(20, 24), gap := 4) -> PanelConta
 	frame.add_child(bar)
 	frame.set_meta("bar", bar)
 	return frame
+
+
+## A pixel block bevel on a bar cell, like the buttons: light top and left edges, a darker
+## bottom and right. Overlays, so the cell keeps its own colour.
+static func _bevel(c: ColorRect, cell: Vector2) -> void:
+	var e := maxf(2.0, round(cell.y / 6.0))       # edge thickness
+	var parts := [
+		[Color(1, 1, 1, 0.38), Control.PRESET_TOP_WIDE, Vector2(0, e)],
+		[Color(1, 1, 1, 0.22), Control.PRESET_LEFT_WIDE, Vector2(e, 0)],
+		[Color(0, 0, 0, 0.32), Control.PRESET_BOTTOM_WIDE, Vector2(0, e * 1.5)],
+		[Color(0, 0, 0, 0.22), Control.PRESET_RIGHT_WIDE, Vector2(e, 0)]]
+	for p in parts:
+		var r := ColorRect.new()
+		r.color = p[0]
+		r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		c.add_child(r)
+		r.set_anchors_and_offsets_preset(p[1])
+		if p[2].y > 0.0:
+			if p[1] == Control.PRESET_TOP_WIDE:
+				r.offset_bottom = p[2].y
+			else:
+				r.offset_top = -p[2].y
+		else:
+			if p[1] == Control.PRESET_LEFT_WIDE:
+				r.offset_right = p[2].x
+			else:
+				r.offset_left = -p[2].x
 
 
 static func set_bar(frame_or_bar: Control, fraction: float, color: Color) -> void:
