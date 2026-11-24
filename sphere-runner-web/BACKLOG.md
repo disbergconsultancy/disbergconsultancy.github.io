@@ -4,11 +4,16 @@ Status of ideas. Built items are listed briefly for context; the rest has design
 The Godot project (`sphere-runner/`) is the main version; the web prototype stays as a quick test bed.
 
 ## Built
+- Sound: chiptune music per world plus menu and boss (generated, `tools/gen_music.py`), sound effects from
+  Kenney's CC0 packs (footsteps per world, 8-bit jingles), separate Music and Sound effects toggles, vibration
+  (Android; iPhone browsers do not allow it) on crashes, stumbles, smashes, boss stomps, throws and defeats.
+- Look: real gold coins; the slide obstacle and the boss-thrown bar are floating purple stone blocks with a shadow.
+  Pixels and block figures only (3D models and the pixel toggle removed; download 9.2 MB -> 3.0 MB).
 - Trial world (first run, replay in Settings): the world freezes before each new element with a gesture tip
   (lanes, jump, slide, glowing floor, coins and power-ups, ability), a training boss with a pause at its first red
   marker, then a real planet hop into Meadow. Mistakes do not end the trial. Heroes: tap a card to pick that hero.
 - Block-pixel UI (designs: Sphere Runner UI designs canvas): home with tab bar (Run, Heroes, Skills, Shop),
-  in-run HUD, pause and settings, run over; pixel world (3D at 1/3 resolution, crisp) with a settings toggle.
+  in-run HUD, pause and settings, run over; pixel world (3D at 1/3 resolution, crisp).
 - Look polish: soft (bevelled) blocks, hero details (blinking eyes, belt, soles; Runner headband, Smasher horns,
   Jumper antennae), KayKit scenery, roadside cones and flags, model obstacles and power-ups, textured boss blocks.
 - Core run, obstacle patterns, waves, power-ups, three characters with abilities, sound.
@@ -95,16 +100,10 @@ A boss is **composed from parts**, all data-driven:
 - **Leaderboards**: Game Center / Google Play Games. Separate boards per level bracket, and one for the daily
   challenge.
 - **Boss earlier in a world**: let a boss appear in the distance before the final lap to set the stage.
-- **Real models**: explored, kept as an option (the block style stays the default: it fits the game). The three heroes use KayKit models (CC0) with KayKit animation clips and our toon layer
-  (menu setting "Hero models"). Still to do: own colours per hero, more clips (a real slide, an air-jump flip clip),
-  and eventually commissioned heroes with their own identity.
-  Bosses use 3D models (Tripo) animated in code: breathing, waddle or flapping, throw wind-up, stomp squash,
-  red pulse when enraged, a leap over the runner at the final pass. Check the Tripo licence before release;
-  rigged versions would allow real attack animations.
-
 ## Parked
 - **Monetisation**: premium, ads or cosmetics only. To decide before building the cosmetics economy.
 
 ## Skipped (decided)
+- Real 3D models for heroes and bosses (KayKit, Tripo): tried, removed. Pixels and block figures are the look.
 - Head starts, pay-to-continue, mystery boxes: they conflict with "skill decides".
 - Core shop: Head start, Reflexes, Quick recovery.
