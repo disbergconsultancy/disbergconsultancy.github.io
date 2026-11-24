@@ -168,7 +168,7 @@ func _ready() -> void:
 				_test["row"] = a.substr(4)
 			elif a.begins_with("move="):     # force this boss move for the shot (e.g. move=rolling_boulder)
 				_test["move"] = a.substr(5)
-			elif a in ["skills", "shop", "over", "heroes", "settings", "pause", "missions", "flipreel", "taptest"]:
+			elif a in ["skills", "shop", "over", "heroes", "settings", "pause", "missions", "flipreel", "taptest", "herosettings"]:
 				_test["screen"] = a
 	if not _test.is_empty():
 		Progress.tutorial_done = not ("trial" in args)   # tests skip the trial unless asked for
@@ -1337,12 +1337,13 @@ func _test_touch(local: Vector2, drag: Vector2, check: Callable, on: Control = n
 	steps.append([false, at + drag])
 	for st in steps:
 		var ev: InputEvent
-		if touch:                      # a finger: screen touch and drag events
+		if touch:                      # a finger: screen touch and drag events, with an iPhone-like touch id
 			if st[0] is String:
 				ev = InputEventScreenDrag.new()
 			else:
 				ev = InputEventScreenTouch.new()
 				ev.pressed = st[0]
+			ev.index = 734512
 			ev.position = st[1]
 		elif st[0] is String:
 			ev = InputEventMouseMotion.new()
@@ -1794,6 +1795,11 @@ func _autotest_tick() -> void:
 					hud.open_shop("menu")
 				"heroes":
 					hud.show_tab("heroes")
+				"herosettings":
+					hud.show_tab("heroes")
+					for i in 3:
+						await get_tree().process_frame
+					hud.show_settings(false)
 				"settings":
 					hud.show_settings(false)
 				"missions":

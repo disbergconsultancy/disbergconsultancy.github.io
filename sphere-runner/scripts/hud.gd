@@ -506,6 +506,7 @@ var _flipped := false          # the middle card shows its skill tree
 var _flipping := false
 var _drag := {}                # {"x0": press x, "dx": drag} while a finger is down
 var _dx := 0.0                 # carousel offset (drag or slide animation)
+var _finger := -1              # the touch index being followed
 
 
 func _hero_color(c: String) -> Color:
@@ -765,9 +766,14 @@ func _layout_cards() -> void:
 		if not (n == _holder and _flipping):
 			n.scale = Vector2(s, s)
 		n.position = Vector2(cx + off - sz.x / 2.0, back_top if (k == 0 and _flipped) else front_top)
-		n.z_index = 1 if t < 0.5 else 0
 		if k != 0:
 			n.modulate.a = 0.0 if _flipped else lerpf(1.0, 0.5, t)
+	# Draw order inside the carousel: the card nearest the middle last (on top). Not z_index,
+	# which would also draw it over the settings panel.
+	var order := _cards.duplicate()
+	order.sort_custom(func(a, b): return absf(a["k"] * gap + _dx) > absf(b["k"] * gap + _dx))
+	for e in order:
+		_car.move_child(e["node"], -1)
 	var under: Control = _car.get_node_or_null("under")
 	if under:
 		under.visible = not _flipped
@@ -787,9 +793,17 @@ func _input(ev: InputEvent) -> void:
 	if _car == null or not is_instance_valid(_car) or not _car.is_visible_in_tree() or _overlay.get_child_count() > 0:
 		return
 	var kind := ""
-	if ev is InputEventScreenTouch and ev.index == 0:
+	if ev is InputEventScreenTouch:
+		# Follow one finger: the one that touched first (iPhone browsers number touches
+		# with large ids, not 0, so take whichever comes first).
+		if ev.pressed and _drag.is_empty():
+			_finger = ev.index
+		if ev.index != _finger:
+			return
 		kind = "down" if ev.pressed else "up"
-	elif ev is InputEventScreenDrag and ev.index == 0:
+	elif ev is InputEventScreenDrag:
+		if ev.index != _finger:
+			return
 		kind = "move"
 	elif ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT and ev.device != InputEvent.DEVICE_ID_EMULATION:
 		kind = "down" if ev.pressed else "up"
