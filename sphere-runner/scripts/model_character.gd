@@ -42,10 +42,18 @@ func build(d: Dictionary) -> void:
 		t = (n as Node3D).transform * t
 		n = n.get_parent()
 	var gpos := func(b: String) -> Vector3: return t * skel.get_bone_global_rest(_idx[b]).origin
-	# turn the model so its left (left leg minus right leg) is -X: it then faces -Z like the game
+	# Turn the model to face -Z like the game: forward is where the toes point (foot -> toe),
+	# checked against its left side (left leg minus right leg) ending up at -X.
+	var fwd: Vector3 = (gpos.call("LeftToeBase") - gpos.call("LeftFoot")) + (gpos.call("RightToeBase") - gpos.call("RightFoot"))
 	var l: Vector3 = gpos.call("LeftUpLeg") - gpos.call("RightUpLeg")
-	var yaw := atan2(l.z, l.x) - PI
-	var turn := Basis(Vector3.UP, -yaw)
+	var turn := Basis()
+	var best := -INF
+	for step in 72:                      # the turn (5 degree steps) that best fits both
+		var b := Basis(Vector3.UP, step * TAU / 72.0)
+		var fit: float = -(b * Vector3(fwd.x, 0, fwd.z)).normalized().z - (b * Vector3(l.x, 0, l.z)).normalized().x
+		if fit > best:
+			best = fit
+			turn = b
 	# height: the top of the head bone (plus the hood) scaled to model_h
 	for mi in model.find_children("*", "MeshInstance3D", true, false):
 		var m3 := mi as MeshInstance3D

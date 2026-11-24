@@ -14,3 +14,7 @@ a humanoid rig with Mixamo bone names (Tripo's auto-rig gives these).
 
 In the game a rigged hero is a `ModelCharacter` (scripts/model_character.gd): set `"model"`
 and `"model_h"` on the character in config.gd. It takes the block figure's poses on its bones.
+- `node cut_steel.mjs in.glb out.glb show|cut [maxY]` removes light steel (blade) colours below
+  the face and above the feet: leftover blade bits.
+- `node cut_webs.mjs in.glb out.glb show|cut` removes triangles whose corners follow different
+  limbs (a hand and a leg): auto-rig leftovers that stretch into slivers when the hero runs.
