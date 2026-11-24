@@ -525,8 +525,10 @@ func _render_skills() -> void:
 	head.add_child(hl)
 	var fp := Progress.free_points(c)
 	head.add_child(UI.chip([UI.label("%d POINT%s" % [fp, "" if fp == 1 else "S"], 30, UI.GOLD)], "chip", Vector2(0, 72)))
-	_place(head, p, M, 144, M)
+	var list := _vbox(14)            # header, tree card, skill details: spaced like the shop
+	list.add_child(head)
 	# Three branches, tier 1 at the top
+	var tree_card := UI.panel("panel", 6)
 	var grid := _hbox(12)
 	grid.alignment = BoxContainer.ALIGNMENT_CENTER
 	for b in 3:
@@ -534,19 +536,19 @@ func _render_skills() -> void:
 		var col := _vbox(6)
 		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		col.alignment = BoxContainer.ALIGNMENT_BEGIN
-		var bt := UI.chip([UI.label(tree[b][0].to_upper(), 28, colr)], "chip", Vector2(196, 60))
+		var bt := UI.chip([UI.label(tree[b][0].to_upper(), 26, colr), UI.label("· %d" % Progress.branch_points(c, b), 26)], "chip", Vector2(186, 60))
 		bt.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		col.add_child(bt)
-		var bp := UI.label("%d points" % Progress.branch_points(c, b), 24, Color.WHITE, 600)
-		bp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		col.add_child(bp)
+		var gap := Control.new()
+		gap.custom_minimum_size.y = 4
+		col.add_child(gap)
 		for tier in 4:
 			var id: String = tree[b][2][tier]
 			var rank: int = pr["alloc"].get(id, 0)
 			var mr := Progress.max_rank(tier)
 			var open_: bool = Progress.branch_points(c, b) >= Progress.TIER_REQ[tier]
-			var nb := UI.button("", "stone" if open_ else "off", 40 if open_ else 32, NODE_ICONS.get(id, "star") if open_ else "lock", 104)
-			nb.custom_minimum_size = Vector2(104, 104)
+			var nb := UI.button("", "stone" if open_ else "off", 40 if open_ else 32, NODE_ICONS.get(id, "star") if open_ else "lock", 88)
+			nb.custom_minimum_size = Vector2(88, 88)
 			nb.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 			UI.set_icon_color(nb, colr if open_ else Color("7a7a82"))
 			if _sk_sel == Vector2i(b, tier):
@@ -564,7 +566,8 @@ func _render_skills() -> void:
 				pips.add_child(pip)
 			col.add_child(pips)
 		grid.add_child(col)
-	_place(grid, p, M, 236, M)
+	tree_card.add_child(grid)
+	list.add_child(tree_card)
 	# The selected skill
 	var detail := UI.panel("panel", 10)
 	var dv := _vbox(8)
@@ -614,7 +617,8 @@ func _render_skills() -> void:
 		_render_skills())
 	row.add_child(test)
 	dv.add_child(row)
-	_place(detail, p, M, 846, M)
+	list.add_child(detail)
+	_place(list, p, M, 144, M)
 
 
 # --- Shop --------------------------------------------------------------
