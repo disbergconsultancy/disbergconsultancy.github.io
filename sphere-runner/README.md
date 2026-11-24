@@ -31,8 +31,9 @@ Everything is built in code (no editor scenes besides `scenes/main.tscn`), so it
 | `assets/kit/` | KayKit Forest Nature, Platformer and Block Bits pieces (CC0, Kay Lousberg): scenery, cones and flags, jump barriers, red wall blocks, ramps and platforms, power-up models, textured boss blocks |
 | `assets/bosses/` | Boss models (Tripo, supplied by the project owner; see its README for the licence note), simplified for mobile: Minotaur, Sand Wyvern, Ice Titan (ice golem), Magma Giant (lava monster). Animated in code in `boss.gd` |
 | `scripts/swipe_input.gd` | Swipes (vertical-friendly zones), taps, double-taps, hold |
-| `scripts/hud.gd` | HUD, ability meter, power-up list, boss bar, menu (character, difficulty, sound, boss test, stats), skill tree, core shop, crash screen |
-| `scripts/sfx.gd` | Synthesized sound effects, rendered once at startup (no audio files) |
+| `scripts/hud.gd` | HUD, ability meter, power-up list, boss bar, menu (heroes, skills, shop), settings (music, sound effects, vibration, pixel world, difficulty, boss test), skill tree, core shop, crash screen |
+| `scripts/sfx.gd` | 8-bit sound effects synthesized at startup (square with duty, triangle, saw, pitched noise) and the music player (looping tracks with a cross-fade) |
+| `assets/audio/music/` | Chiptune loops per world plus menu and boss, made by `tools/gen_music.py` (numpy + ffmpeg): `python3 tools/gen_music.py [names]` |
 
 ## Self-test (headless)
 ```

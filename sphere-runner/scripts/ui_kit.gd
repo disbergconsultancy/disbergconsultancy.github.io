@@ -10,6 +10,7 @@ const GOLD := Color("ffd34a")
 const HERO_ICONS := {"runner": "hero", "smasher": "hero", "jumper": "hero"}
 
 static var _fonts := {}
+static var click: Callable          # played on every button press (set by the game)
 static var _tex := {}
 
 
@@ -90,6 +91,9 @@ static func button(text: String, kind := "stone", size := 34, icon_name := "", h
 	var b := Button.new()
 	b.custom_minimum_size = Vector2(0, height)
 	b.focus_mode = Control.FOCUS_NONE
+	b.pressed.connect(func():
+		if click.is_valid():
+			click.call())
 	style(b, kind)
 	b.add_theme_stylebox_override("disabled", box("btn_off", 6))
 	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())

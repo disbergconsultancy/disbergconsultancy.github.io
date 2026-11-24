@@ -219,7 +219,7 @@ func _defeat() -> void:
 	game.pts += bonus
 	game.hud.flash("BOSS\nDEFEATED!")
 	game.hud.pop("+%d" % bonus)
-	game.sfx.play("ready")
+	game.sfx.play("defeat")
 	_flash_t = 0.5
 	game.character.event("cheer")
 	for it in game.planet.items:
@@ -301,7 +301,7 @@ func _schedule(dt: float) -> void:
 			w.vel = 9.0
 			w.boss = true
 			game.shake = maxf(game.shake, 0.3)
-			game.sfx.play("smash")
+			game.sfx.play("stomp")
 	_attack_t -= dt
 	_jump_t = maxf(0.0, _jump_t - dt)
 	if _attack_t > 0.0:
@@ -351,6 +351,7 @@ func _schedule(dt: float) -> void:
 		if path_ok():
 			if _bb:
 				_bb.on_attack()
+			game.sfx.play("throw")
 			var label: String = Config.BOSS_MOVES[attempt]["label"]
 			if label != "" and not _used.has(attempt):
 				_used[attempt] = true

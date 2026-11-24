@@ -75,7 +75,7 @@ func _start(i: int) -> void:
 func _freeze() -> void:
 	waiting = true
 	g.hud.show_tip(_pending_tip[0], _pending_tip[1], _pending_tip[2].replace("\\n", "\n"))
-	g.sfx.play("ready")
+	g.sfx.play("tip")
 
 
 ## Is this the move the tip asks for?

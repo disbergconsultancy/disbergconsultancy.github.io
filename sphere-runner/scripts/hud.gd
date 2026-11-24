@@ -799,7 +799,8 @@ func show_settings(paused: bool) -> void:
 	var box := UI.panel("chip", 16)
 	var bv := _vbox(18)
 	box.add_child(bv)
-	bv.add_child(_toggle("Sound", Config.sound, func(on): Config.sound = on))
+	bv.add_child(_toggle("Music", Config.music, func(on): Config.music = on))
+	bv.add_child(_toggle("Sound effects", Config.sound, func(on): Config.sound = on))
 	bv.add_child(_toggle("Vibration", Config.vibration, func(on): Config.vibration = on))
 	bv.add_child(_toggle("Pixel world", Config.pixel_world, func(on): Config.pixel_world = on))
 	bv.add_child(_toggle("3D models", Config.hero_models, func(on):

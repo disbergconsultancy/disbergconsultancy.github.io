@@ -110,7 +110,12 @@ func _ready() -> void:
 		start_run())
 	hud.settings_changed.connect(func():
 		Progress.save()
+		sfx.enabled = Config.sound
+		sfx.set_music_on(Config.music)
 		_apply_pixel_world())
+	UI.click = func(): sfx.play("click")
+	sfx.music_on = Config.music
+	sfx.music("menu")
 	hud.menu_pressed.connect(_to_menu)
 	hud.pause_pressed.connect(_toggle_pause)
 	hud.character_changed.connect(func():
@@ -176,6 +181,7 @@ func _make_character() -> void:
 
 
 func _exit_tree() -> void:
+	UI.click = Callable()   # a static lambda bound to this node must not outlive it
 	if is_instance_valid(boss) and not boss.is_inside_tree():
 		boss.free()      # the boss node lives outside the tree between fights
 
@@ -317,6 +323,7 @@ func start_run() -> void:
 	Progress.save()            # remembers character, difficulty and sound
 	spawner.allow_powers = true
 	sfx.enabled = Config.sound
+	sfx.music(_track_for(Config.THEME))
 	reset()
 	state = "run"
 	hud.show_run()
@@ -338,7 +345,14 @@ func _start_trial() -> void:
 	tut.begin()
 
 
+## The music loop for a planet (the trial world uses Meadow's).
+func _track_for(th: Dictionary) -> String:
+	var n: String = th["name"].to_lower()
+	return n if n in ["meadow", "dunes", "glacier", "ember"] else "meadow"
+
+
 func _to_menu() -> void:
+	sfx.music("menu")
 	state = "menu"
 	spawner.allow_powers = false
 	reset()
@@ -436,7 +450,7 @@ func crash(it: Item = null) -> void:
 		character.event("stumble")
 		shake = 0.45
 		hud.flash("STUMBLE!" + ("\n1 left" if stumbles_left > 0 else ""))
-		sfx.play("smash")
+		sfx.play("stumble")
 		_buzz(40)
 		return
 	state = "hit"
@@ -488,7 +502,7 @@ func start_hop() -> void:
 	vy = 0.0
 	pw["invuln"] = Config.HOP_TIME + 1.2
 	hud.flash("PLANET HOP!")
-	sfx.play("ability")
+	sfx.play("hop")
 
 
 ## Flip high into the air; at the top the screen flashes white and the next planet appears.
@@ -508,6 +522,7 @@ func _update_hop(dt: float) -> void:
 			cycle += 1                 # a new loop: from now on the bosses are forged
 		_set_planet(nxt)
 		_start_world()
+		sfx.music(_track_for(Config.THEME))
 		hud.flash(Config.THEME["name"] + ("\nNEW BOSSES!" if new_loop else ""))
 		if tut:                        # the trial world is done: on into the first world
 			tut.finish()
@@ -520,6 +535,8 @@ func _update_hop(dt: float) -> void:
 
 
 func _game_over() -> void:
+	sfx.music("")
+	sfx.play("gameover")
 	state = "over"
 	if test_run >= 0:
 		hud.show_over({"title": "BOSS TEST", "score": score(), "rows": [["World", Config.THEME["name"].capitalize()],
@@ -791,6 +808,7 @@ func step(dt: float) -> void:
 		if world_lap == Config.THEME["laps_to_boss"]:
 			boss.start_fight()                     # laps done: the chase starts
 			sfx.play("ability")
+			sfx.music("boss")
 		elif boss.phase == "none":
 			speed = minf(d["max"], speed + Config.LAP_BONUS)
 			if world_lap == Config.THEME["laps_to_boss"] - 1:
@@ -889,6 +907,7 @@ func _move_player(dt: float) -> void:
 			vy = 0.0
 			grounded = true
 			character.event("land", 1.0 if hard else 0.0)
+			sfx.play("land", 0.8 if hard else 1.1)
 			air_jumps = 0
 			if super_active:
 				super_active = false
@@ -989,7 +1008,7 @@ func _collide() -> void:
 			coins += 1
 			pts += 10 * st["coin_mul"] * (1.0 if grounded else st["air_coin_mul"]) * _mult() * _combo_mult()
 			_add_combo(1)
-			sfx.play("coin")
+			sfx.play("coin", 1.0 + 0.05 * mini(combo_level - 1, 6))   # the chime climbs with the combo
 		elif it.kind == "POWER":
 			planet.hide_item(it)
 			activate(it.power)

@@ -81,6 +81,7 @@ func load_save() -> void:
 	Config.pixel_world = cfg.get_value("settings", "pixel_world", Config.pixel_world)
 	tutorial_done = cfg.get_value("stats", "tutorial_done", false)
 	Config.vibration = cfg.get_value("settings", "vibration", Config.vibration)
+	Config.music = cfg.get_value("settings", "music", Config.music)
 
 
 func save() -> void:
@@ -98,6 +99,7 @@ func save() -> void:
 	cfg.set_value("settings", "pixel_world", Config.pixel_world)
 	cfg.set_value("stats", "tutorial_done", tutorial_done)
 	cfg.set_value("settings", "vibration", Config.vibration)
+	cfg.set_value("settings", "music", Config.music)
 	cfg.save(SAVE_PATH)
 
 
