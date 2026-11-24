@@ -109,6 +109,7 @@ func _ready() -> void:
 	hud.play_pressed.connect(start_run)
 	hud.again_pressed.connect(func(): start_boss_test(test_run) if test_run >= 0 else start_run())
 	hud.boss_test.connect(start_boss_test)
+	hud.lab_pressed.connect(open_lab)
 	hud.tutorial_pressed.connect(func():
 		Progress.tutorial_done = false
 		start_run())
@@ -168,10 +169,19 @@ func _ready() -> void:
 				_test["row"] = a.substr(4)
 			elif a.begins_with("move="):     # force this boss move for the shot (e.g. move=rolling_boulder)
 				_test["move"] = a.substr(5)
-			elif a in ["skills", "shop", "over", "heroes", "settings", "pause", "missions", "flipreel", "taptest", "herosettings"]:
+			elif a in ["skills", "shop", "over", "heroes", "settings", "pause", "missions", "flipreel", "taptest", "herosettings", "lab"]:
 				_test["screen"] = a
 	if not _test.is_empty():
 		Progress.tutorial_done = not ("trial" in args)   # tests skip the trial unless asked for
+
+
+## Hero Lab (Settings): the hero's moves on a loop, to check them before they go in.
+func open_lab() -> void:
+	if lab:
+		return
+	lab = HeroLab.new(self)
+	add_child(lab)
+	lab.open()
 
 
 ## The hero: a model (a rigged hero from assets/heroes) when the character has one,
@@ -394,8 +404,8 @@ var _pix_box: SubViewportContainer
 var _pix_vp: SubViewport
 
 
-func _apply_pixel_world() -> void:
-	if Config.pixel_world:
+func _apply_pixel_world(on := Config.pixel_world) -> void:
+	if on:
 		if _pix_box == null:
 			var layer := CanvasLayer.new()
 			layer.layer = -1
@@ -818,9 +828,15 @@ func _combo_mult() -> int:
 # Update
 # =====================================================================
 
+var lab: HeroLab               # the Hero Lab while it is open (Settings)
+
+
 func _process(delta: float) -> void:
 	if not _test.is_empty():
 		_autotest_tick()
+		return
+	if lab:
+		lab.tick(minf(delta, 0.05) * lab.speed())
 		return
 	var dt := minf(delta, 0.05)
 	var gdt := dt
@@ -1811,6 +1827,16 @@ func _autotest_tick() -> void:
 					hud.show_settings(false)
 				"settings":
 					hud.show_settings(false)
+				"lab":                  # Hero Lab: labmove=<move> labcam=<behind|side|front|turn> at the shot time
+					open_lab()
+					for a in OS.get_cmdline_user_args():
+						if a.begins_with("labmove="):
+							lab.move = a.substr(8)
+						elif a.begins_with("labcam="):
+							lab.cam = a.substr(7)
+					lab._restart()
+					for i in int(_test["t"] * 60.0):
+						lab.tick(1.0 / 60.0)
 				"missions":
 					Progress.missions = {"set": 2, "list": Missions.make_set(2)}
 					Progress.missions["list"][0]["prog"] = Progress.missions["list"][0]["target"] - 3

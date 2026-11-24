@@ -21,6 +21,8 @@ Everything is built in code (no editor scenes besides `scenes/main.tscn`), so it
 | `scripts/spawner.gd` | Obstacle patterns (rows, ramps/roofs, corridor, zigzag, glowing floor, jump-slide, movers) and wave/calm pacing |
 | `scripts/item.gd` | One obstacle/coin/surface: logical box for collisions + visual parts |
 | `scripts/character.gd` | Block figure on a humanoid joint layout, toon animation: poses on springs (overshoot, follow-through), squash and stretch, one-off moves (takeoff, air-jump flip, lane hop, slide dust, landing dust, stumble, crash flop, cheer), menu idle |
+| `scripts/model_character.gd` | A rigged hero model (Mixamo bone names, e.g. from Tripo) driven by the block figure's poses, with firmer springs |
+| `scripts/hero_lab.gd` | Hero Lab (Settings): a hero's moves on a loop (run, jump, air flip, slide, lane, stumble, crash, cheer, float, idle), pause, frame step, slow motion, camera behind/side/front/turning, pixel look on/off |
 | `scripts/missions.gd` | Missions: three at a time in sets (counts over all runs or within one run), coin and XP rewards, a set bonus, then a harder set. No score multiplier |
 | `scripts/tutorial.gd` | Trial world: freezes before each new element with a gesture tip, training boss, planet hop into Meadow |
 | `scripts/ui_kit.gd` | Block-pixel UI kit: Pixelify Sans, block buttons and panels (9-patch textures), 8x8 pixel icons, segmented bars |

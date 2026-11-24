@@ -13,6 +13,7 @@ signal boss_test(index: int)
 signal progress_changed       # skills or shop changed: main recomputes stats
 signal settings_changed       # pixel world, sound...
 signal tutorial_pressed       # replay the trial world
+signal lab_pressed            # open the Hero Lab
 
 const M := 26.0               # screen margin
 const NODE_ICONS := {
@@ -1091,11 +1092,20 @@ func show_settings(paused: bool) -> void:
 				boss_test.emit(i))
 			trow.add_child(b)
 		v.add_child(trow)
-		var tut := UI.button("PLAY THE TRIAL AGAIN", "stone", 26, "play", 76)
+		var trow2 := _hbox(10)
+		var tut := UI.button("PLAY THE TRIAL", "stone", 24, "play", 76)
+		tut.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		tut.pressed.connect(func():
 			_clear(_overlay)
 			tutorial_pressed.emit())
-		v.add_child(tut)
+		trow2.add_child(tut)
+		var labb := UI.button("HERO LAB", "blue", 24, "hero", 76)
+		labb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		labb.pressed.connect(func():
+			_clear(_overlay)
+			lab_pressed.emit())
+		trow2.add_child(labb)
+		v.add_child(trow2)
 		var close := UI.button("DONE", "green", 40, "check", 100)
 		close.pressed.connect(func():
 			_clear(_overlay)

@@ -12,6 +12,8 @@ const BONES := {
 	"arm_l": ["LeftArm"], "fore_l": ["LeftForeArm"], "arm_r": ["RightArm"], "fore_r": ["RightForeArm"],
 	"thigh_l": ["LeftUpLeg"], "shin_l": ["LeftLeg"], "thigh_r": ["RightUpLeg"], "shin_r": ["RightLeg"]}
 const SPLIT := {"Spine": 0.34, "Spine1": 0.33, "Spine2": 0.33, "Neck": 0.4, "Head": 0.6}
+const MODEL_K := 1100.0          # spring stiffness (block figure: 520)
+const MODEL_ZETA := 0.9          # damping (block figure: 0.5, which overshoots)
 const STRAIGHTEN := ["LeftArm", "LeftForeArm", "RightArm", "RightForeArm", "LeftUpLeg", "LeftLeg", "RightUpLeg", "RightLeg"]
 
 var model: Node3D
@@ -131,6 +133,18 @@ func _apply_joints() -> void:
 			var parent_rest: Basis = _rest[p] if p >= 0 else Basis()
 			var local: Basis = parent_rest.inverse() * (mi * r * _m) * _rest[i]
 			skel.set_bone_pose_rotation(i, local.get_rotation_quaternion())
+
+
+## Stiffer than the block figure: a real body with real legs looks rubbery when the joints
+## overshoot. Firm springs, close to critically damped (floppy only when crashed).
+func _springs(target: Dictionary, keys: Array, dt: float, floppy: bool) -> void:
+	var h := dt / 3.0
+	for _i in 3:
+		for k in keys:
+			var kk: float = (MODEL_K * 0.5 if floppy else MODEL_K) * SOFT.get(k, 1.0)
+			var d := 2.0 * (0.45 if floppy else MODEL_ZETA) * sqrt(kk)
+			vel[k] += ((target.get(k, 0.0) - pose[k]) * kk - vel[k] * d) * h
+			pose[k] += vel[k] * h
 
 
 func set_dead(dead: bool) -> void:
