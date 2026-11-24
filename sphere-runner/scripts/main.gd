@@ -168,7 +168,7 @@ func _ready() -> void:
 				_test["row"] = a.substr(4)
 			elif a.begins_with("move="):     # force this boss move for the shot (e.g. move=rolling_boulder)
 				_test["move"] = a.substr(5)
-			elif a in ["skills", "shop", "over", "heroes", "settings", "pause", "missions", "flipreel"]:
+			elif a in ["skills", "shop", "over", "heroes", "settings", "pause", "missions", "flipreel", "taptest"]:
 				_test["screen"] = a
 	if not _test.is_empty():
 		Progress.tutorial_done = not ("trial" in args)   # tests skip the trial unless asked for
@@ -1323,6 +1323,37 @@ func _autotest_missions() -> void:
 	Progress.save()
 
 
+## Presses at a point of a hero card (local to `on`, default the middle card), drags by
+## `drag` (in screen pixels) and releases, like a finger; returns what `check` reads after.
+func _test_touch(local: Vector2, drag: Vector2, check: Callable, on: Control = null) -> Variant:
+	if on == null:
+		on = hud._holder
+	var vp := get_viewport()
+	var at: Vector2 = vp.get_screen_transform() * (on.get_global_transform_with_canvas() * local)
+	var steps := [[true, at]]
+	if drag != Vector2.ZERO:
+		for k in range(1, 6):
+			steps.append(["move", at + drag * k / 5.0])
+	steps.append([false, at + drag])
+	for st in steps:
+		var ev: InputEvent
+		if st[0] is String:
+			ev = InputEventMouseMotion.new()
+			ev.button_mask = MOUSE_BUTTON_MASK_LEFT
+		else:
+			ev = InputEventMouseButton.new()
+			ev.button_index = MOUSE_BUTTON_LEFT
+			ev.pressed = st[0]
+		ev.position = st[1]
+		ev.global_position = st[1]
+		Input.parse_input_event(ev)
+		for i in 2:
+			await get_tree().process_frame
+	for i in 40:
+		await get_tree().process_frame
+	return check.call()
+
+
 ## --runstats [runs=N] [diff=medium]: a fresh level-1 Runner (no skills, no shop upgrades)
 ## played by three human-like bots. Prints how long runs last and what they earn.
 func _runstats(dt: float) -> void:
@@ -1775,6 +1806,20 @@ func _autotest_tick() -> void:
 					for i in 30:
 						step(dt)
 					_render(dt)
+		if _test.get("screen", "") == "taptest":      # real taps and a swipe (through the viewport) on the hero cards
+			Config.character = "runner"
+			hud.show_tab("heroes")
+			for i in 5:
+				await get_tree().process_frame
+			var out := []
+			out.append("tap middle card -> flipped %s" % await _test_touch(hud._holder.size / 2.0, Vector2.ZERO, func(): return hud._flipped))
+			out.append("tap beside it -> flipped %s" % await _test_touch(Vector2(-12.0, hud._holder.size.y * 0.5), Vector2.ZERO, func(): return hud._flipped))
+			var side: Control = hud._cards.filter(func(e): return e["k"] == 1)[0]["node"]
+			out.append("tap right card -> hero %s" % await _test_touch(Vector2(40.0, side.size.y / 2.0), Vector2.ZERO, func(): return Config.character, side))
+			out.append("swipe left -> hero %s" % await _test_touch(hud._holder.size / 2.0, Vector2(-260, 0), func(): return Config.character))
+			print("AUTOTEST hero cards (window %s): %s" % [DisplayServer.window_get_size(), ", ".join(out)])
+			get_tree().quit()
+			return
 		if _test.get("screen", "") == "flipreel":     # frames of the hero card flip, flip back and a swipe
 			Progress.prog["runner"]["lvl"] = 12
 			Config.character = "runner"

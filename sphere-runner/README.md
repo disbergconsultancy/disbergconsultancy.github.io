@@ -50,7 +50,7 @@ plays a fresh level-1 Runner with human-like bots (reaction time, timing errors,
 prints median run time, distance, coins and XP. Use it before and after tuning speed or difficulty.
 
 Screenshot at N seconds into a run: `godot --path sphere-runner -- --shot out.png 8` (add `menu` for the menu,
-`char=smasher`, `power=orbit`, `ability`, `boss=N` for a boss test on planet N, or `menu skills` / `menu shop` / `menu over` / `menu missions`, `menu flipreel` (frames of the hero card flip; use `--fixed-fps 30`), `row=HIGH` for a row of that kind just ahead, `move=<signature move>` with `boss=N`, e.g. `move=vine_sweep`, `meteor_shower`, `ice_lane`, `quake_rhythm`, `decoy`, `rolling_boulder`, `lava_trail`).
+`char=smasher`, `power=orbit`, `ability`, `boss=N` for a boss test on planet N, or `menu skills` / `menu shop` / `menu over` / `menu missions`, `menu flipreel` (frames of the hero card flip; use `--fixed-fps 30`), `menu taptest` (real taps and a swipe on the hero cards, through the viewport: prints what happened), `row=HIGH` for a row of that kind just ahead, `move=<signature move>` with `boss=N`, e.g. `move=vine_sweep`, `meteor_shower`, `ice_lane`, `quake_rhythm`, `decoy`, `rolling_boulder`, `lava_trail`).
 
 ## Port status
 - **Phase 1 (done):** core run: planet, lanes, jump/float/slam/slide/air dash/jump buffer, ramps and roofs,

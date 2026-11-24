@@ -577,6 +577,7 @@ func _hero_front(c: String, middle: bool) -> Control:
 		badge.size_flags_horizontal = Control.SIZE_SHRINK_END
 		badge.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	_ignore_mouse(card)
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE    # taps go through to the carousel
 	return card
 
 
@@ -775,6 +776,11 @@ func _layout_cards() -> void:
 		under.size = Vector2(_car.size.x, 80)
 
 
+## A card's rectangle in the carousel's own coordinates (scale and pivot included).
+func _card_rect(n: Control) -> Rect2:
+	return n.get_transform() * Rect2(Vector2.ZERO, n.size)
+
+
 func _car_input(ev: InputEvent) -> void:
 	if _flipping:
 		return
@@ -785,7 +791,7 @@ func _car_input(ev: InputEvent) -> void:
 			var dx: float = _drag["dx"]
 			_drag = {}
 			if _flipped:
-				if not _holder.get_global_rect().has_point(ev.global_position):
+				if not _card_rect(_holder).has_point(ev.position):
 					_flip()                # a tap beside the open card turns it back
 				return
 			var gap := _front_size().x * 0.86 + 20.0
@@ -793,7 +799,7 @@ func _car_input(ev: InputEvent) -> void:
 				_slide_to(1 if dx < 0.0 else -1, gap)
 			elif absf(dx) < 16.0:
 				for e in _cards:       # a tap: the middle card flips, a side card comes to the middle
-					if e["node"].get_global_rect().has_point(ev.global_position):
+					if _card_rect(e["node"]).has_point(ev.position):
 						if e["k"] == 0:
 							_flip()
 						else:
