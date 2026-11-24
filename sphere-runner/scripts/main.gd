@@ -1562,8 +1562,14 @@ func _autotest_tick() -> void:
 					for it in planet.items:
 						if it.alive and _ahead_m(it) > -2.0 and _ahead_m(it) < 40.0:
 							planet.hide_item(it)
-					for l in [-1, 0, 1]:
-						planet.add_item(_test["row"], angle + 15.0 / planet.radius, Config.lane_x(l))
+					if _test["row"].begins_with("SWEEP"):    # one item across the track, as landed
+						var sw := planet.add_item(_test["row"], angle + 15.0 / planet.radius, 0.0, {"w": Config.TRACK_HALF * 2.0 - 0.4})
+						for p in sw.parts:
+							if p.get("shadow", false):
+								p["node"].visible = true
+					else:
+						for l in [-1, 0, 1]:
+							planet.add_item(_test["row"], angle + 15.0 / planet.radius, Config.lane_x(l))
 				if i == n - 90:
 					if _test.has("power"):
 						activate(_test["power"])

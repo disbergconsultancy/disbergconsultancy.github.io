@@ -883,6 +883,8 @@ func _update_throws(dt: float) -> void:
 				it.set_meta("origin", _bb.throw_origin() if _bb else Vector2(0.0, Config.BOSS_LIFT + Config.BOSS_SIZE * 0.5))
 			var o: Vector2 = it.get_meta("origin")
 			for p in it.parts:
+				if p.get("shadow", false):     # the shadow appears when it lands
+					continue
 				var tphi: float = it.phi + p["dm"] / planet.radius
 				var tx: float = it.x + p.get("dx", 0.0)
 				planet.place(p["node"], lerpf(phi_b, tphi, u), lerpf(o.x, tx, u), lerpf(o.y, p["y"], u) + 8.0 * sin(PI * u))
@@ -890,6 +892,9 @@ func _update_throws(dt: float) -> void:
 		else:
 			it.fly_t = -1.0
 			planet.place_item(it)
+			for p in it.parts:
+				if p.get("shadow", false):
+					p["node"].visible = it.alive
 			for m in it.marks:
 				planet.hide_item(m)
 			game.shake = maxf(game.shake, 0.2)

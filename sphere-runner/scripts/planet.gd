@@ -492,6 +492,15 @@ func add_item(kind: String, phi: float, x: float, opts := {}) -> Item:
 			# A floating block: slide under it. Its shadow on the road shows where it hangs.
 			it.parts.append({"node": _floating_block(w, h, depth, color), "dm": 0.0, "y": it.y0 + h / 2.0, "bob": true})
 			it.parts.append({"node": _shadow(w * 0.9, depth * 1.1), "dm": 0.0, "y": 0.03})
+		"SWEEPHIGH":
+			# Thrown by a boss: a row of floating blocks across the track. Shadows show on landing.
+			var seg := w / 3.0
+			for i in 3:
+				var dx := -w / 2.0 + seg * (i + 0.5)
+				it.parts.append({"node": _floating_block(seg - 0.12, h, depth, color), "dm": 0.0, "y": it.y0 + h / 2.0, "dx": dx, "bob": true})
+				var sh := _shadow((seg - 0.12) * 0.9, depth * 1.1)
+				sh.visible = false
+				it.parts.append({"node": sh, "dm": 0.0, "y": 0.03, "dx": dx, "shadow": true})
 		_:
 			it.parts.append({"node": _box(Vector3(w, h, depth), color), "dm": 0.0, "y": it.y0 + h / 2.0})
 			_add_details(it, kind, w, h, depth)
@@ -518,10 +527,6 @@ func _add_details(it: Item, kind: String, w: float, h: float, depth: float) -> v
 			band.call(y0 + 0.08, Color.WHITE, 0.08)
 		"MOVER", "SWEEPLOW":
 			band.call(y0 + h * 0.5, Color.WHITE, 0.14 if kind == "MOVER" else 0.08)
-		"SWEEPHIGH":   # a thrown bar that lands on two posts: slide under
-			for sx in [-1.0, 1.0]:
-				it.parts.append({"node": _box(Vector3(0.18, y0, 0.18), Color("8a3a8a")), "dm": 0.0, "y": y0 / 2.0, "dx": sx * (w / 2.0 - 0.1)})
-			band.call(y0 + 0.08, Color.WHITE, 0.08)
 		"FIST", "BLOCK":   # boulder / wall bands
 			band.call(y0 + h - 0.15, Color("8a1a1a"), 0.18)
 			band.call(y0 + 0.5, Color("8a1a1a"), 0.12)
