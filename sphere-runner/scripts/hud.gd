@@ -829,7 +829,7 @@ func show_settings(paused: bool) -> void:
 		v.add_child(UI.label("Boss test (not saved)", 28, UI.GOLD))
 		var trow := _hbox(8)
 		for i in Config.THEMES.size() + 1:
-			var nm: String = "Forge" if i == Config.THEMES.size() else Config.THEMES[i]["boss"]["name"].split(" ")[-1].capitalize()
+			var nm: String = "Forge" if i == Config.THEMES.size() else "World %d" % (i + 1)
 			var b := UI.button(nm, "stone", 22, "", 70)
 			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			b.pressed.connect(func():

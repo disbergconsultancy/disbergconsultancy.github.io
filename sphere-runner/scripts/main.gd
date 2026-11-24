@@ -522,7 +522,7 @@ func _update_hop(dt: float) -> void:
 func _game_over() -> void:
 	state = "over"
 	if test_run >= 0:
-		hud.show_over({"title": "BOSS TEST", "score": score(), "rows": [["Boss", Config.THEME["boss"]["name"]],
+		hud.show_over({"title": "BOSS TEST", "score": score(), "rows": [["World", Config.THEME["name"].capitalize()],
 			["Result", "DEFEATED" if boss.kills > 0 else ("%d m left" % int(boss.dist - boss.done) if boss.phase == "fight" else "Not reached")],
 			["Coins", coins], ["Saved", "No (test)"]]})
 		return
@@ -1047,11 +1047,11 @@ func _update_hud() -> void:
 	hud.set_info(coins, where.to_upper(), int(speed * 3.6))
 	match boss.phase:
 		"intro":
-			hud.set_boss(true, Config.THEME["boss"]["name"], 0.0, "waiting at the end of this lap")
+			hud.set_boss(true, "BOSS", 0.0, "waiting at the end of this lap")
 		"fight":
-			hud.set_boss(true, Config.THEME["boss"]["name"], boss.progress(), "%d m to pass it" % int(boss.dist - boss.done))
+			hud.set_boss(true, "BOSS", boss.progress(), "%d m to pass it" % int(boss.dist - boss.done))
 		"down":
-			hud.set_boss(true, Config.THEME["boss"]["name"], 1.0, "DEFEATED")
+			hud.set_boss(true, "BOSS", 1.0, "DEFEATED")
 		_:
 			hud.set_boss(false)
 	hud.combo_label.text = "COMBO x%d  (%d)" % [_combo_mult(), combo] if combo >= 3 else ""

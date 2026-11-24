@@ -187,7 +187,7 @@ func start_intro() -> void:
 		_build()
 		game.planet.add_child(self)
 	phase = "intro"
-	game.hud.flash("FINAL LAP\n%s AHEAD" % Config.THEME["boss"]["name"])
+	game.hud.flash("FINAL LAP\nBOSS AHEAD")
 
 
 func start_fight() -> void:
@@ -208,7 +208,7 @@ func start_fight() -> void:
 	_pass_items.clear()
 	_pass_marks.clear()
 	_stomp_t = 0.0
-	game.hud.flash("CATCH THE\n%s" % Config.THEME["boss"]["name"])
+	game.hud.flash("CATCH THE\nBOSS")
 
 
 func _defeat() -> void:
@@ -217,7 +217,7 @@ func _defeat() -> void:
 	kills += 1
 	var bonus: int = 500 * game._mult()
 	game.pts += bonus
-	game.hud.flash("%s\nDEFEATED!" % Config.THEME["boss"]["name"])
+	game.hud.flash("BOSS\nDEFEATED!")
 	game.hud.pop("+%d" % bonus)
 	game.sfx.play("ready")
 	_flash_t = 0.5
