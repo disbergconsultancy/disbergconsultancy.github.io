@@ -1138,7 +1138,7 @@ func _mission_card(m: Dictionary, s: int) -> Control:
 	var v := Missions.value(m, {})
 	UI.set_bar(bar, float(v) / m["target"], Color("5fd36a") if m["done"] else UI.GOLD)
 	bar_row.add_child(bar)
-	bar_row.add_child(UI.label("%d/%d" % [v, m["target"]], 24, Color.WHITE, 600))
+	bar_row.add_child(UI.label("DONE" if m["done"] else "%d/%d" % [v, m["target"]], 24, Color("5fd36a") if m["done"] else Color.WHITE, 600))
 	col.add_child(bar_row)
 	h.add_child(col)
 	var rw := _vbox(2)
@@ -1222,7 +1222,9 @@ func show_over(data: Variant, title := "") -> void:
 			ml.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			ml.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			mh.add_child(ml)
-			mh.add_child(UI.label("DONE!" if fresh else "%d/%d" % [m["prog"], m["target"]], 24, UI.GOLD if fresh else Color.WHITE, 600))
+			# just finished: gold DONE!; finished in an earlier run: DONE; otherwise the count
+			var state_txt: String = "DONE!" if fresh else ("DONE" if m["done"] else "%d/%d" % [m["prog"], m["target"]])
+			mh.add_child(UI.label(state_txt, 24, UI.GOLD if fresh else Color.WHITE, 600))
 			mv.add_child(mh)
 		if ms["coins"] > 0:
 			var rl := UI.label(("SET COMPLETE! " if ms["set_done"] else "") + "Missions: +%d coins, +%d XP" % [ms["coins"], ms["xp"]], 26, UI.GOLD)

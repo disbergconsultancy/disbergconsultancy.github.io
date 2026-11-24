@@ -1844,6 +1844,8 @@ func _autotest_tick() -> void:
 					hud.show_missions()
 				"over":
 					Progress.missions = {"set": 0, "list": Missions.make_set(0)}
+					Progress.missions["list"][0]["prog"] = 150    # coins: finished in an earlier run
+					Progress.missions["list"][0]["done"] = true
 					Progress.missions["list"][1]["prog"] = 38     # 40 jumps: done during this run
 					_test["missions"] = true
 					start_run()
