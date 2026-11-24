@@ -356,7 +356,7 @@ func _process(delta: float) -> void:
 func _build_menu() -> void:
 	_menu = _layer()
 	add_child(_menu)
-	for t in ["home", "heroes", "skills", "shop"]:
+	for t in ["home", "heroes", "missions", "shop"]:
 		var p := _layer()
 		p.mouse_filter = Control.MOUSE_FILTER_IGNORE if t == "home" else Control.MOUSE_FILTER_STOP
 		_menu.add_child(p)
@@ -366,11 +366,13 @@ func _build_menu() -> void:
 	bar.alignment = BoxContainer.ALIGNMENT_CENTER
 	_anchor(bar, _menu, 18, -176, 18, 1.0)
 	bar.offset_bottom = -16
-	for t in [["home", "play", "RUN"], ["heroes", "hero", "HEROES"], ["skills", "star", "SKILLS"], ["shop", "coin", "SHOP"]]:
+	for t in [["home", "play", "RUN"], ["heroes", "hero", "HEROES"], ["missions", "check", "MISSIONS"], ["shop", "coin", "SHOP"]]:
 		var b := UI.button(t[2], "stone", 26, t[1], 140, true, 48)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.size_flags_vertical = Control.SIZE_SHRINK_END
-		b.pressed.connect(show_tab.bind(t[0]))
+		b.pressed.connect(func():
+			_flipped = false               # the Heroes tab opens with the cards face up
+			show_tab(t[0]))
 		bar.add_child(b)
 		_tab_buttons[t[0]] = b
 
@@ -405,8 +407,8 @@ func show_tab(t: String) -> void:
 			_render_home()
 		"heroes":
 			_render_heroes()
-		"skills":
-			_render_skills()
+		"missions":
+			_render_missions()
 		"shop":
 			_render_shop()
 
@@ -489,144 +491,151 @@ func _cycle_hero(step: int) -> void:
 
 
 func _set_character(c: String) -> void:
+	var tab := _tab
 	Config.character = c
-	character_changed.emit()
-	show_tab(_tab)
+	character_changed.emit()       # (the game reopens the menu)
+	show_tab(tab)
 
 
-# --- Heroes --------------------------------------------------------------
+# --- Heroes: a card carousel; tap the middle card to flip it to the skill tree --------
 
-func _render_heroes() -> void:
-	var p: Control = _pages["heroes"]
-	_clear(p)
-	p.add_child(UI.backdrop())
-	_topbar(p, "HEROES")
-	var list := _vbox(14)
-	for c in Config.CHARS:
-		var d: Dictionary = Config.CHARS[c]
-		var s := Progress.stats(c)
-		var sel: bool = c == Config.character
-		var card := UI.panel("panel", 14)
-		if sel:
-			card.self_modulate = Color("fff2b8")
-		var row := _hbox(18)
-		card.add_child(row)
-		var frame := UI.panel("block_white", 0)
-		frame.self_modulate = Color(d["body"]) if c != "smasher" else Color("c98612")
-		var portrait := TextureRect.new()
-		portrait.texture = UI.tex("hero_" + c)
-		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		portrait.custom_minimum_size = Vector2(140, 140)
-		portrait.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		frame.add_child(portrait)
-		row.add_child(frame)
-		var info := _vbox(6)
-		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		var head := _hbox()
-		var nm := UI.label(d["name"].to_upper(), 38)
-		nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		head.add_child(nm)
-		head.add_child(UI.label("LV %d" % Progress.prog[c]["lvl"], 32, UI.GOLD))
-		info.add_child(head)
-		info.add_child(UI.label(_ability_line(c), 24, Color.WHITE, 500))
-		var col := Color(d["body"]) if c != "smasher" else Color("ffb020")
-		for st in [["Jump", (s["jump_v"] - 9.5) * 1.3], ["Meter", 5.0 + (s["meter_mul"] - 1.0) * 7.5], ["Combo", 5.0 + (s["combo_time"] - 2.5) * 3.0]]:
-			var r := _hbox(10)
-			var lbl := UI.label(st[0], 24, Color.WHITE, 600)
-			lbl.custom_minimum_size.x = 100
-			r.add_child(lbl)
-			var bar := UI.seg_bar(10, Vector2(14, 16), 3)
-			bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			UI.set_bar(bar, st[1] / 10.0, col)
-			r.add_child(bar)
-			info.add_child(r)
-		if sel:
-			var tag := UI.chip([UI.label("SELECTED", 28, UI.GOLD)], "chip", Vector2(220, 64))
-			tag.size_flags_horizontal = Control.SIZE_SHRINK_END
-			info.add_child(tag)
-		row.add_child(info)
-		# The whole card is the button: tap it to pick this hero.
-		_ignore_mouse(card)
-		card.mouse_filter = Control.MOUSE_FILTER_STOP
-		card.gui_input.connect(func(ev: InputEvent):
-			if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT and not ev.pressed:
-				_set_character(c))
-		list.add_child(card)
-	_place(list, p, M, 160, M)
+var _car: Control              # the carousel area
+var _cards: Array = []         # [{"node": Control, "k": -1 | 0 | 1}] (k = 0: the middle card, in a flip holder)
+var _holder: Control           # the middle card's holder (what flips)
+var _flipped := false          # the middle card shows its skill tree
+var _flipping := false
+var _drag := {}                # {"x0": press x, "dx": drag} while a finger is down
+var _dx := 0.0                 # carousel offset (drag or slide animation)
 
 
-# --- Skills --------------------------------------------------------------
+func _hero_color(c: String) -> Color:
+	return Color(Config.CHARS[c]["body"]) if c != "smasher" else Color("c98612")
 
-func _render_skills() -> void:
-	var p: Control = _pages["skills"]
-	_clear(p)
-	p.add_child(UI.backdrop())
-	_topbar(p, "SKILLS")
-	var c := Config.character
+
+func _portrait(c: String, size: float) -> Control:
+	var frame := UI.panel("block_white", 0)
+	frame.self_modulate = _hero_color(c)
+	frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var pic := TextureRect.new()
+	pic.texture = UI.tex("hero_" + c)
+	pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	pic.custom_minimum_size = Vector2(size, size)
+	pic.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	frame.add_child(pic)
+	return frame
+
+
+func _front_size() -> Vector2:
+	return Vector2(minf(_car.size.x * 0.74, 540.0), 660.0)
+
+
+func _back_size() -> Vector2:
+	return Vector2(minf(_car.size.x - 36.0, 700.0), minf(_car.size.y - 10.0, 960.0))
+
+
+## The front of a hero card: portrait, name and level, ability, stat bars, points badge.
+func _hero_front(c: String, middle: bool) -> Control:
+	var d: Dictionary = Config.CHARS[c]
+	var s := Progress.stats(c)
+	var card := UI.panel("panel", 18)
+	if middle:
+		card.self_modulate = Color("fff2b8")
+	var v := _vbox(12)
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	card.add_child(v)
+	v.add_child(_portrait(c, 300))
+	var head := _hbox(16)
+	head.alignment = BoxContainer.ALIGNMENT_CENTER
+	head.add_child(UI.label(d["name"].to_upper(), 52))
+	head.add_child(UI.label("LV %d" % Progress.prog[c]["lvl"], 34, UI.GOLD))
+	v.add_child(head)
+	var ab := UI.label(_ability_line(c), 26, Color.WHITE, 500)
+	ab.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(ab)
+	var col := Color(d["body"]) if c != "smasher" else Color("ffb020")
+	for st in [["Jump", (s["jump_v"] - 9.5) * 1.3], ["Meter", 5.0 + (s["meter_mul"] - 1.0) * 7.5], ["Combo", 5.0 + (s["combo_time"] - 2.5) * 3.0]]:
+		var r := _hbox(10)
+		var lbl := UI.label(st[0], 26, Color.WHITE, 600)
+		lbl.custom_minimum_size.x = 110
+		r.add_child(lbl)
+		var bar := UI.seg_bar(10, Vector2(14, 18), 3)
+		bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		UI.set_bar(bar, st[1] / 10.0, col)
+		r.add_child(bar)
+		v.add_child(r)
+	if middle:
+		var hint := _hbox(10)
+		hint.alignment = BoxContainer.ALIGNMENT_CENTER
+		hint.add_child(UI.icon("tap", 32, UI.GOLD))
+		hint.add_child(UI.label("Tap to flip: skill tree", 28, UI.GOLD))
+		v.add_child(hint)
+	var fp := Progress.free_points(c)
+	if fp > 0:                         # unspent skill points: a badge in the corner
+		var badge := UI.chip([UI.label("%d POINT%s" % [fp, "" if fp == 1 else "S"], 24, UI.GOLD)], "chip", Vector2(0, 52))
+		card.add_child(badge)
+		badge.size_flags_horizontal = Control.SIZE_SHRINK_END
+		badge.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	_ignore_mouse(card)
+	return card
+
+
+## The back of the middle card: this hero's skill tree, the selected skill, Learn.
+func _hero_back(c: String) -> Control:
 	var pr: Dictionary = Progress.prog[c]
 	var tree: Array = Progress.TREES[c]
-	# Hero line and free points
-	var head := _hbox(14)
-	var frame := UI.panel("block_white", 0)
-	frame.self_modulate = Color(Config.CHARS[c]["body"]) if c != "smasher" else Color("c98612")
-	var portrait := TextureRect.new()
-	portrait.texture = UI.tex("hero_" + c)
-	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	portrait.custom_minimum_size = Vector2(72, 72)
-	portrait.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	frame.add_child(portrait)
-	head.add_child(frame)
-	var hl := UI.label("%s · LV %d" % [Config.CHARS[c]["name"].to_upper(), pr["lvl"]], 36)
+	var card := UI.panel("panel", 14)
+	card.self_modulate = Color("fff2b8")
+	var list := _vbox(10)
+	card.add_child(list)
+	var head := _hbox(12)
+	head.add_child(_portrait(c, 60))
+	var hl := UI.label("%s · LV %d" % [Config.CHARS[c]["name"].to_upper(), pr["lvl"]], 34)
 	hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(hl)
 	var fp := Progress.free_points(c)
-	head.add_child(UI.chip([UI.label("%d POINT%s" % [fp, "" if fp == 1 else "S"], 30, UI.GOLD)], "chip", Vector2(0, 72)))
-	var list := _vbox(14)            # header, tree card, skill details: spaced like the shop
+	head.add_child(UI.chip([UI.label("%d POINT%s" % [fp, "" if fp == 1 else "S"], 26, UI.GOLD)], "chip", Vector2(0, 60)))
 	list.add_child(head)
 	# Three branches, tier 1 at the top
-	var tree_card := UI.panel("panel", 6)
-	var grid := _hbox(12)
+	var tree_card := UI.panel("chip", 6)
+	var grid := _hbox(8)
 	grid.alignment = BoxContainer.ALIGNMENT_CENTER
 	for b in 3:
 		var colr := Color(tree[b][1])
-		var col := _vbox(6)
+		var col := _vbox(5)
 		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		col.alignment = BoxContainer.ALIGNMENT_BEGIN
-		var bt := UI.chip([UI.label(tree[b][0].to_upper(), 26, colr), UI.label("· %d" % Progress.branch_points(c, b), 26)], "chip", Vector2(186, 60))
+		var bt := UI.chip([UI.label(tree[b][0].to_upper(), 24, colr), UI.label("· %d" % Progress.branch_points(c, b), 24)], "chip", Vector2(0, 52))
 		bt.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		col.add_child(bt)
-		var gap := Control.new()
-		gap.custom_minimum_size.y = 4
-		col.add_child(gap)
 		for tier in 4:
 			var id: String = tree[b][2][tier]
 			var rank: int = pr["alloc"].get(id, 0)
-			var mr := Progress.max_rank(tier)
 			var open_: bool = Progress.branch_points(c, b) >= Progress.TIER_REQ[tier]
-			var nb := UI.button("", "stone" if open_ else "off", 40 if open_ else 32, NODE_ICONS.get(id, "star") if open_ else "lock", 88)
-			nb.custom_minimum_size = Vector2(88, 88)
+			var nb := UI.button("", "stone" if open_ else "off", 36 if open_ else 28, NODE_ICONS.get(id, "star") if open_ else "lock", 80)
+			nb.custom_minimum_size = Vector2(80, 80)
 			nb.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 			UI.set_icon_color(nb, colr if open_ else Color("7a7a82"))
 			if _sk_sel == Vector2i(b, tier):
 				UI.style(nb, "blue")
 			nb.pressed.connect(func():
 				_sk_sel = Vector2i(b, tier)
-				_render_skills())
+				_render_heroes())
 			col.add_child(nb)
 			var pips := _hbox(5)
 			pips.alignment = BoxContainer.ALIGNMENT_CENTER
-			for i in mr:
+			for i in Progress.max_rank(tier):
 				var pip := ColorRect.new()
-				pip.custom_minimum_size = Vector2(16, 16)
+				pip.custom_minimum_size = Vector2(14, 14)
 				pip.color = colr if i < rank else Color("2b2d36")
+				pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 				pips.add_child(pip)
 			col.add_child(pips)
 		grid.add_child(col)
 	tree_card.add_child(grid)
 	list.add_child(tree_card)
 	# The selected skill
-	var detail := UI.panel("panel", 10)
-	var dv := _vbox(8)
+	var detail := UI.panel("chip", 10)
+	var dv := _vbox(6)
 	detail.add_child(dv)
 	var sb: int = _sk_sel.x
 	var stier: int = _sk_sel.y
@@ -634,47 +643,247 @@ func _render_skills() -> void:
 	var srank: int = pr["alloc"].get(sid, 0)
 	var smax := Progress.max_rank(stier)
 	var dh := _hbox()
-	var dn := UI.label(Progress.NODE_NAMES[sid].to_upper(), 40, Color(tree[sb][1]))
+	var dn := UI.label(Progress.NODE_NAMES[sid].to_upper(), 34, Color(tree[sb][1]))
 	dn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	dh.add_child(dn)
-	dh.add_child(UI.label("%d/%d" % [srank, smax], 32))
+	dh.add_child(UI.label("%d/%d" % [srank, smax], 28))
 	dv.add_child(dh)
 	var txt := ("Now: %s\n" % Progress.describe(sid, srank)) if srank > 0 else ""
 	txt += ("Next: %s" % Progress.describe(sid, srank + 1)) if srank < smax else "Fully learned"
 	if Progress.branch_points(c, sb) < Progress.TIER_REQ[stier]:
 		txt += "\nOpens with %d points in %s." % [Progress.TIER_REQ[stier], tree[sb][0]]
-	var dl := UI.label(txt, 26, Color.WHITE, 500)
+	var dl := UI.label(txt, 24, Color.WHITE, 500)
 	dl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	dl.custom_minimum_size.x = 600
+	dl.custom_minimum_size.x = 400
 	dv.add_child(dl)
-	var row := _hbox(10)
-	var learn := UI.button("LEARN · 1 POINT", "green", 30, "check", 84)
-	learn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var learn := UI.button("LEARN · 1 POINT", "green", 28, "check", 76)
 	UI.disable(learn, not Progress.can_learn(c, sb, stier))
 	learn.pressed.connect(func():
 		Progress.learn(c, sb, stier)
 		progress_changed.emit()
-		_render_skills())
-	row.add_child(learn)
-	var reset := UI.button("RESET", "stone", 22, "", 84)
+		_render_heroes())
+	dv.add_child(learn)
+	list.add_child(detail)
+	var row := _hbox(10)
+	var back := UI.button("FLIP BACK", "stone", 24, "left", 66)
+	back.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	back.pressed.connect(_flip)
+	row.add_child(back)
+	var reset := UI.button("RESET", "stone", 20, "", 66)
 	reset.custom_minimum_size.x = 110
 	reset.pressed.connect(func():
 		Progress.respec(c)
 		progress_changed.emit()
-		_render_skills())
+		_render_heroes())
 	row.add_child(reset)
-	var test := UI.button("+1 LV", "stone", 22, "", 84)
+	var test := UI.button("+1 LV", "stone", 20, "", 66)
 	test.custom_minimum_size.x = 100
 	test.pressed.connect(func():
 		if pr["lvl"] < Progress.MAX_LEVEL:
 			pr["lvl"] += 1
 			pr["xp"] = 0
 			Progress.save()
-		_render_skills())
+		_render_heroes())
 	row.add_child(test)
-	dv.add_child(row)
-	list.add_child(detail)
-	_place(list, p, M, 144, M)
+	list.add_child(row)
+	return card
+
+
+func _render_heroes() -> void:
+	var p: Control = _pages["heroes"]
+	_clear(p)
+	p.add_child(UI.backdrop())
+	_topbar(p, "HEROES")
+	_car = Control.new()
+	_car.mouse_filter = Control.MOUSE_FILTER_STOP
+	p.add_child(_car)
+	_car.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_car.offset_top = 140
+	_car.offset_bottom = -186
+	_car.gui_input.connect(_car_input)
+	_cards.clear()
+	_dx = 0.0
+	_flipping = false
+	var keys: Array = Config.CHARS.keys()
+	var i := keys.find(Config.character)
+	for k in [-1, 1]:
+		var side := _hero_front(keys[posmod(i + k, keys.size())], false)
+		_car.add_child(side)
+		_cards.append({"node": side, "k": k, "c": keys[posmod(i + k, keys.size())]})
+	_holder = Control.new()
+	_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_car.add_child(_holder)
+	_holder.add_child(_hero_back(Config.character) if _flipped else _hero_front(Config.character, true))
+	_cards.append({"node": _holder, "k": 0, "c": Config.character})
+	# Dots (which hero) and a swipe hint under the cards
+	var under := _vbox(10)
+	under.name = "under"
+	var dots := _hbox(14)
+	dots.alignment = BoxContainer.ALIGNMENT_CENTER
+	for k in keys.size():
+		var dot := ColorRect.new()
+		dot.custom_minimum_size = Vector2(22, 22)
+		dot.color = UI.GOLD if k == i else Color("4a4a50")
+		dots.add_child(dot)
+	under.add_child(dots)
+	var hint := UI.label("Swipe for other heroes · the middle one runs", 24, Color("e8e8ec"), 500)
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	under.add_child(hint)
+	_ignore_mouse(under)
+	_car.add_child(under)
+	if not _car.resized.is_connected(_layout_cards):
+		_car.resized.connect(_layout_cards)
+	_layout_cards.call_deferred()
+
+
+## Positions the cards: the middle one full size, the others smaller and dimmed at the
+## sides; _dx slides them all (while dragging or animating a switch).
+func _layout_cards() -> void:
+	if _car == null or not is_instance_valid(_car) or _car.size.x <= 0.0:
+		return
+	var fs := _front_size()
+	var gap := fs.x * 0.86 + 20.0
+	var cx := _car.size.x / 2.0
+	var front_top := maxf(30.0, (_car.size.y - fs.y - 110.0) / 2.0)    # cards and dots, centred
+	var back_top := maxf(0.0, (_car.size.y - _back_size().y) / 2.0)
+	for e in _cards:
+		var n: Control = e["node"]
+		var k: int = e["k"]
+		var sz: Vector2 = _back_size() if (k == 0 and _flipped) else fs
+		if n == _holder:
+			_holder.size = sz
+			var inner: Control = _holder.get_child(0) if _holder.get_child_count() > 0 else null
+			if inner:
+				inner.position = Vector2.ZERO
+				inner.size = sz
+		else:
+			n.size = sz
+		n.pivot_offset = sz / 2.0
+		var off := k * gap + _dx
+		var t := clampf(absf(off) / gap, 0.0, 1.0)
+		var s := lerpf(1.0, 0.8, t)
+		if not (n == _holder and _flipping):
+			n.scale = Vector2(s, s)
+		n.position = Vector2(cx + off - sz.x / 2.0, back_top if (k == 0 and _flipped) else front_top)
+		n.z_index = 1 if t < 0.5 else 0
+		if k != 0:
+			n.modulate.a = 0.0 if _flipped else lerpf(1.0, 0.5, t)
+	var under: Control = _car.get_node_or_null("under")
+	if under:
+		under.visible = not _flipped
+		under.position = Vector2(0, front_top + fs.y + 24.0)
+		under.size = Vector2(_car.size.x, 80)
+
+
+func _car_input(ev: InputEvent) -> void:
+	if _flipping:
+		return
+	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
+		if ev.pressed:
+			_drag = {"x0": ev.position.x, "dx": 0.0}
+		elif not _drag.is_empty():
+			var dx: float = _drag["dx"]
+			_drag = {}
+			if _flipped:
+				if not _holder.get_global_rect().has_point(ev.global_position):
+					_flip()                # a tap beside the open card turns it back
+				return
+			var gap := _front_size().x * 0.86 + 20.0
+			if absf(dx) > 90.0:
+				_slide_to(1 if dx < 0.0 else -1, gap)
+			elif absf(dx) < 16.0:
+				for e in _cards:       # a tap: the middle card flips, a side card comes to the middle
+					if e["node"].get_global_rect().has_point(ev.global_position):
+						if e["k"] == 0:
+							_flip()
+						else:
+							_slide_to(e["k"], gap)
+						return
+				_snap_back()
+			else:
+				_snap_back()
+	elif ev is InputEventMouseMotion and not _drag.is_empty() and not _flipped:
+		_drag["dx"] = ev.position.x - _drag["x0"]
+		_dx = _drag["dx"]
+		_layout_cards()
+
+
+func _set_dx(v: float) -> void:
+	_dx = v
+	_layout_cards()
+
+
+func _snap_back() -> void:
+	var tw := create_tween()
+	tw.tween_method(_set_dx, _dx, 0.0, 0.15).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+
+
+## Slides the hero at side k (-1 left, 1 right) to the middle and picks it.
+func _slide_to(k: int, gap: float) -> void:
+	_flipping = true
+	if UI.sound.is_valid():
+		UI.sound.call("swish")
+	var tw := create_tween()
+	tw.tween_method(_set_dx, _dx, -k * gap, 0.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tw.tween_callback(func():
+		for e in _cards:
+			if e["k"] == k:
+				_set_character(e["c"])
+				return)
+
+
+## Turns the middle card over: it squeezes to its edge (darkening a little, lifted),
+## swaps to the other side (and that side's size), then springs open.
+func _flip() -> void:
+	if _flipping:
+		return
+	_flipping = true
+	_drag = {}
+	if UI.sound.is_valid():
+		UI.sound.call("swish")
+	var to_back := not _flipped
+	var tw := create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(_holder, "scale", Vector2(0.0, 1.06), 0.16).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	tw.tween_property(_holder, "modulate", Color(0.65, 0.65, 0.72), 0.16)
+	for e in _cards:
+		if e["k"] != 0:
+			tw.tween_property(e["node"], "modulate:a", 0.0 if to_back else 0.5, 0.16)
+	tw.chain().tween_callback(func():
+		_flipped = to_back
+		for ch in _holder.get_children():
+			ch.queue_free()
+		_holder.add_child(_hero_back(Config.character) if _flipped else _hero_front(Config.character, true))
+		_layout_cards()
+		_layout_cards.call_deferred())     # again once the new side has its layout
+	tw.chain().tween_property(_holder, "scale", Vector2(1.0, 1.0), 0.32).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(_holder, "modulate", Color.WHITE, 0.25)
+	tw.chain().tween_callback(func():
+		_flipping = false
+		_layout_cards())
+
+
+# --- Missions --------------------------------------------------------------
+
+func _render_missions() -> void:
+	var p: Control = _pages["missions"]
+	_clear(p)
+	p.add_child(UI.backdrop())
+	_topbar(p, "MISSIONS")
+	var v := _vbox(18)
+	var s: int = Progress.missions["set"]
+	var sub := UI.label("Set %d · %d of 3 done" % [s + 1, Progress.missions_done()], 34, UI.GOLD)
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(sub)
+	for m in Progress.missions["list"]:
+		v.add_child(_mission_card(m, s))
+	var bonus := UI.chip([UI.label("Finish all three:", 28, Color.WHITE, 600), UI.icon("coin", 32, UI.GOLD), UI.label("+%d" % Missions.set_bonus(s), 28, UI.GOLD)], "chip", Vector2(0, 72))
+	v.add_child(bonus)
+	var note := UI.label("Missions count in every run. Finish a set for a bonus and a new set.", 24, Color("e8e8ec"), 500)
+	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(note)
+	_place(v, p, M, 160, M)
 
 
 # --- Shop --------------------------------------------------------------
@@ -772,7 +981,8 @@ func show_run() -> void:
 ## Kept for older callers (tests): opens a tab from the menu.
 func open_skills(_from := "menu") -> void:
 	show_menu(_best)
-	show_tab("skills")
+	_flipped = true
+	show_tab("heroes")
 
 
 func open_shop(_from := "menu") -> void:
@@ -858,32 +1068,10 @@ func show_settings(paused: bool) -> void:
 	_place(panel, _overlay, 44, 110, 44)
 
 
-## The missions panel (from the home screen).
+## Opens the Missions tab.
 func show_missions() -> void:
 	_clear(_overlay)
-	var dim := ColorRect.new()
-	dim.color = Color(0.06, 0.07, 0.1, 0.6)
-	_overlay.add_child(_full(dim))
-	var panel := UI.panel("panel_stone", 22)
-	var v := _vbox(18)
-	panel.add_child(v)
-	var title := UI.label("MISSIONS", 70, Color.WHITE, 700, true)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(title)
-	var s: int = Progress.missions["set"]
-	var sub := UI.label("Set %d" % (s + 1), 32, UI.GOLD)
-	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(sub)
-	for m in Progress.missions["list"]:
-		v.add_child(_mission_card(m, s))
-	var bonus := UI.chip([UI.label("All three:", 28, Color.WHITE, 600), UI.icon("coin", 32, UI.GOLD), UI.label("+%d" % Missions.set_bonus(s), 28, UI.GOLD)], "chip", Vector2(0, 64))
-	v.add_child(bonus)
-	var close := UI.button("DONE", "green", 40, "check", 100)
-	close.pressed.connect(func():
-		_clear(_overlay)
-		show_tab(_tab))
-	v.add_child(close)
-	_place(panel, _overlay, 44, 150, 44)
+	show_tab("missions")
 
 
 ## One mission: icon, text, progress bar and count, reward (or a check when done).
@@ -1021,7 +1209,11 @@ func show_over(data: Variant, title := "") -> void:
 		btn.pressed.connect(func():
 			_clear(_overlay)
 			menu_pressed.emit()
-			show_tab(b[2]))
+			if b[2] == "skills":
+				_flipped = true            # the hero card, turned to its skill tree
+				show_tab("heroes")
+			else:
+				show_tab(b[2]))
 		row.add_child(btn)
 	v.add_child(row)
 	_place(panel, _overlay, 40, 150, 40)

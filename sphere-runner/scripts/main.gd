@@ -118,6 +118,7 @@ func _ready() -> void:
 		sfx.set_music_on(Config.music)
 		_apply_pixel_world())
 	UI.click = func(): sfx.play("click")
+	UI.sound = func(n: String): sfx.play(n)
 	sfx.music_on = Config.music
 	sfx.music("menu")
 	hud.menu_pressed.connect(_to_menu)
@@ -167,7 +168,7 @@ func _ready() -> void:
 				_test["row"] = a.substr(4)
 			elif a.begins_with("move="):     # force this boss move for the shot (e.g. move=rolling_boulder)
 				_test["move"] = a.substr(5)
-			elif a in ["skills", "shop", "over", "heroes", "settings", "pause", "missions"]:
+			elif a in ["skills", "shop", "over", "heroes", "settings", "pause", "missions", "flipreel"]:
 				_test["screen"] = a
 	if not _test.is_empty():
 		Progress.tutorial_done = not ("trial" in args)   # tests skip the trial unless asked for
@@ -183,7 +184,8 @@ func _make_character() -> void:
 
 
 func _exit_tree() -> void:
-	UI.click = Callable()   # a static lambda bound to this node must not outlive it
+	UI.click = Callable()   # static lambdas bound to this node must not outlive it
+	UI.sound = Callable()
 	if is_instance_valid(boss) and not boss.is_inside_tree():
 		boss.free()      # the boss node lives outside the tree between fights
 
@@ -1773,6 +1775,24 @@ func _autotest_tick() -> void:
 					for i in 30:
 						step(dt)
 					_render(dt)
+		if _test.get("screen", "") == "flipreel":     # frames of the hero card flip, flip back and a swipe
+			Progress.prog["runner"]["lvl"] = 12
+			Config.character = "runner"
+			hud.show_tab("heroes")
+			var k := 0
+			for step_i in 5:
+				for f in (20 if step_i % 2 == 0 else 34):
+					await RenderingServer.frame_post_draw
+					get_viewport().get_texture().get_image().save_png(_test["path"] % k)
+					k += 1
+				match step_i:
+					0: hud._flip()
+					1: hud._flip()
+					2: hud._slide_to(1, hud._front_size().x * 0.86 + 20.0)
+					3: hud._flip()
+			print("AUTOTEST flip frames: ", k)
+			get_tree().quit()
+			return
 		for i in 3:
 			await get_tree().process_frame
 		await RenderingServer.frame_post_draw

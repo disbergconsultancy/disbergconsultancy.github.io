@@ -4,6 +4,8 @@ Status of ideas. Built items are listed briefly for context; the rest has design
 The Godot project (`sphere-runner/`) is the main version; the web prototype stays as a quick test bed.
 
 ## Built
+- Heroes and skills together: the Heroes tab is a card carousel (swipe, or tap a side card); tap the middle card
+  and it flips to that hero's skill tree. Missions got its own tab (tabs: Run, Heroes, Missions, Shop).
 - Missions: three at a time in sets, shown on the home screen (Missions panel) and the run-over screen, with a
   "MISSION DONE!" pop-up mid-run. Counts over all runs or within one run (coins, close calls, smashes, jumps,
   slides, power-ups, distance, bosses, reaching a world, a boss without a stumble, close calls with a given hero).

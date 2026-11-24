@@ -29,7 +29,7 @@ Everything is built in code (no editor scenes besides `scenes/main.tscn`), so it
 | `scripts/kit.gd` | Shared look: soft (bevelled) blocks used for every block in the game, and loading, fitting and tinting KayKit models |
 | `assets/kit/` | KayKit Forest Nature, Platformer and Block Bits pieces (CC0, Kay Lousberg): scenery, cones and flags, jump barriers, red wall blocks, ramps and platforms, power-up models, textured boss blocks |
 | `scripts/swipe_input.gd` | Swipes (vertical-friendly zones), taps, double-taps, hold |
-| `scripts/hud.gd` | HUD, ability meter, power-up list, boss bar, menu (heroes, skills, shop), settings (music, sound effects, vibration, difficulty, boss test), skill tree, core shop, crash screen |
+| `scripts/hud.gd` | HUD, ability meter, power-up list, boss bar, menu (tabs Run, Heroes, Missions, Shop; Heroes is a card carousel and the middle card flips to its skill tree), settings (music, sound effects, vibration, difficulty, boss test), skill tree, core shop, crash screen |
 | `scripts/sfx.gd` | Sound effects (Kenney files where present, footsteps per world; otherwise 8-bit effects synthesized at startup (square with duty, triangle, saw, pitched noise) and the music player (looping tracks with a cross-fade) |
 | `assets/audio/sfx/` | Sound effects from Kenney's CC0 packs (Digital Audio, Impact Sounds, Interface Sounds, Music Jingles; kenney.nl), picked and levelled by `tools/pick_sfx.py`. Effects without a file stay synthesized (coin, slide, swish, dash) |
 | `assets/audio/music/` | Chiptune loops per world plus menu and boss, made by `tools/gen_music.py` (numpy + ffmpeg): `python3 tools/gen_music.py [names]` |
@@ -50,7 +50,7 @@ plays a fresh level-1 Runner with human-like bots (reaction time, timing errors,
 prints median run time, distance, coins and XP. Use it before and after tuning speed or difficulty.
 
 Screenshot at N seconds into a run: `godot --path sphere-runner -- --shot out.png 8` (add `menu` for the menu,
-`char=smasher`, `power=orbit`, `ability`, `boss=N` for a boss test on planet N, or `menu skills` / `menu shop` / `menu over` / `menu missions`, `row=HIGH` for a row of that kind just ahead, `move=<signature move>` with `boss=N`, e.g. `move=vine_sweep`, `meteor_shower`, `ice_lane`, `quake_rhythm`, `decoy`, `rolling_boulder`, `lava_trail`).
+`char=smasher`, `power=orbit`, `ability`, `boss=N` for a boss test on planet N, or `menu skills` / `menu shop` / `menu over` / `menu missions`, `menu flipreel` (frames of the hero card flip; use `--fixed-fps 30`), `row=HIGH` for a row of that kind just ahead, `move=<signature move>` with `boss=N`, e.g. `move=vine_sweep`, `meteor_shower`, `ice_lane`, `quake_rhythm`, `decoy`, `rolling_boulder`, `lava_trail`).
 
 ## Port status
 - **Phase 1 (done):** core run: planet, lanes, jump/float/slam/slide/air dash/jump buffer, ramps and roofs,

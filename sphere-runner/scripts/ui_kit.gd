@@ -11,6 +11,7 @@ const HERO_ICONS := {"runner": "hero", "smasher": "hero", "jumper": "hero"}
 
 static var _fonts := {}
 static var click: Callable          # played on every button press (set by the game)
+static var sound: Callable          # sound(name): plays a sound effect (set by the game)
 static var _tex := {}
 
 
