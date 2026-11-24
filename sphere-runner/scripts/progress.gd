@@ -60,6 +60,9 @@ func _ready() -> void:
 # Save
 # =====================================================================
 
+var tutorial_done := false    # the trial world has been played
+
+
 func load_save() -> void:
 	var cfg := ConfigFile.new()
 	var ok := cfg.load(SAVE_PATH) == OK
@@ -76,6 +79,7 @@ func load_save() -> void:
 	Config.sound = cfg.get_value("settings", "sound", Config.sound)
 	Config.hero_models = cfg.get_value("settings", "models_3d", Config.hero_models)
 	Config.pixel_world = cfg.get_value("settings", "pixel_world", Config.pixel_world)
+	tutorial_done = cfg.get_value("stats", "tutorial_done", false)
 	Config.vibration = cfg.get_value("settings", "vibration", Config.vibration)
 
 
@@ -92,6 +96,7 @@ func save() -> void:
 	cfg.set_value("settings", "sound", Config.sound)
 	cfg.set_value("settings", "models_3d", Config.hero_models)
 	cfg.set_value("settings", "pixel_world", Config.pixel_world)
+	cfg.set_value("stats", "tutorial_done", tutorial_done)
 	cfg.set_value("settings", "vibration", Config.vibration)
 	cfg.save(SAVE_PATH)
 

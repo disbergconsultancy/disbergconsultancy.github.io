@@ -21,6 +21,7 @@ Everything is built in code (no editor scenes besides `scenes/main.tscn`), so it
 | `scripts/spawner.gd` | Obstacle patterns (rows, ramps/roofs, corridor, zigzag, glowing floor, jump-slide, movers) and wave/calm pacing |
 | `scripts/item.gd` | One obstacle/coin/surface: logical box for collisions + visual parts |
 | `scripts/character.gd` | Block figure on a humanoid joint layout, toon animation: poses on springs (overshoot, follow-through), squash and stretch, one-off moves (takeoff, air-jump flip, lane hop, slide dust, landing dust, stumble, crash flop, cheer), menu idle |
+| `scripts/tutorial.gd` | Trial world: freezes before each new element with a gesture tip, training boss, planet hop into Meadow |
 | `scripts/ui_kit.gd` | Block-pixel UI kit: Pixelify Sans, block buttons and panels (9-patch textures), 8x8 pixel icons, segmented bars |
 | `assets/ui/` | UI textures generated from the agreed designs (buttons, panels, tiles, icons, hero portraits) |
 | `assets/fonts/` | Pixelify Sans (SIL Open Font License 1.1) |

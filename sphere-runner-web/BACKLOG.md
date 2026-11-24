@@ -4,6 +4,9 @@ Status of ideas. Built items are listed briefly for context; the rest has design
 The Godot project (`sphere-runner/`) is the main version; the web prototype stays as a quick test bed.
 
 ## Built
+- Trial world (first run, replay in Settings): the world freezes before each new element with a gesture tip
+  (lanes, jump, slide, glowing floor, coins and power-ups, ability), a training boss with a pause at its first red
+  marker, then a real planet hop into Meadow. Mistakes do not end the trial. Heroes: tap a card to pick that hero.
 - Block-pixel UI (designs: Sphere Runner UI designs canvas): home with tab bar (Run, Heroes, Skills, Shop),
   in-run HUD, pause and settings, run over; pixel world (3D at 1/3 resolution, crisp) with a settings toggle.
 - Look polish: soft (bevelled) blocks, hero details (blinking eyes, belt, soles; Runner headband, Smasher horns,

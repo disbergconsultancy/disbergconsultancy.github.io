@@ -12,6 +12,7 @@ signal character_changed
 signal boss_test(index: int)
 signal progress_changed       # skills or shop changed: main recomputes stats
 signal settings_changed       # pixel world, sound...
+signal tutorial_pressed       # replay the trial world
 
 const M := 26.0               # screen margin
 const NODE_ICONS := {
@@ -53,6 +54,8 @@ var _flash: Label
 var _pop: Label
 var _flash_t := 0.0
 var _pop_t := 0.0
+var _tip: Control             # trial world: the gesture tip while the world is frozen
+var _tip_icon: Control
 
 # Menu screens
 var _menu: Control             # home + tabs
@@ -131,6 +134,13 @@ func _hbox(sep := 12) -> HBoxContainer:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", sep)
 	return h
+
+
+func _ignore_mouse(n: Node) -> void:
+	for ch in n.get_children():
+		if ch is Control:
+			ch.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_ignore_mouse(ch)
 
 
 func _clear(n: Node) -> void:
@@ -245,6 +255,39 @@ func _build_run() -> void:
 	_anchor(_pause_btn, _run, M, -148, -1, 1.0, true)
 
 
+## Trial world: the world is frozen and this tip shows the gesture to make.
+func show_tip(icon_name: String, title: String, text: String) -> void:
+	hide_tip()
+	_tip = _layer()
+	var dim := ColorRect.new()
+	dim.color = Color(0.06, 0.07, 0.1, 0.35)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tip.add_child(_full(dim))
+	var panel := UI.panel("panel", 16)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var v := _vbox(12)
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	panel.add_child(v)
+	_tip_icon = UI.icon(icon_name, 96, UI.GOLD)
+	v.add_child(_tip_icon)
+	var t := UI.label(title, 52, Color.WHITE, 700, true)
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(t)
+	var d := UI.label(text, 30, Color.WHITE, 600)
+	d.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(d)
+	_anchor(panel, _tip, 60, -330, 60, 0.5)
+	_run.add_child(_tip)
+
+
+func hide_tip() -> void:
+	if _tip:
+		_tip.queue_free()
+		_tip = null
+		_tip_icon = null
+
+
 func set_info(coins_: int, where: String, kmh: int) -> void:
 	_coin_val.text = str(coins_)
 	_where_val.text = where
@@ -295,6 +338,8 @@ func _process(delta: float) -> void:
 			_pop.text = ""
 	if _combo_chip:
 		_combo_chip.visible = combo_label.text != ""
+	if _tip_icon:                 # the gesture icon bobs
+		_tip_icon.position.y = -6.0 * absf(sin(Time.get_ticks_msec() / 220.0))
 
 
 # =====================================================================
@@ -488,13 +533,13 @@ func _render_heroes() -> void:
 			var tag := UI.chip([UI.label("SELECTED", 28, UI.GOLD)], "chip", Vector2(220, 64))
 			tag.size_flags_horizontal = Control.SIZE_SHRINK_END
 			info.add_child(tag)
-		else:
-			var b := UI.button("SELECT", "stone", 28, "", 64)
-			b.size_flags_horizontal = Control.SIZE_SHRINK_END
-			b.custom_minimum_size.x = 220
-			b.pressed.connect(_set_character.bind(c))
-			info.add_child(b)
 		row.add_child(info)
+		# The whole card is the button: tap it to pick this hero.
+		_ignore_mouse(card)
+		card.mouse_filter = Control.MOUSE_FILTER_STOP
+		card.gui_input.connect(func(ev: InputEvent):
+			if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT and not ev.pressed:
+				_set_character(c))
 		list.add_child(card)
 	_place(list, p, M, 160, M)
 
@@ -705,6 +750,7 @@ func show_menu(best := 0) -> void:
 
 
 func show_run() -> void:
+	hide_tip()
 	_menu.visible = false
 	_clear(_overlay)
 	_run.visible = true
@@ -790,6 +836,11 @@ func show_settings(paused: bool) -> void:
 				boss_test.emit(i))
 			trow.add_child(b)
 		v.add_child(trow)
+		var tut := UI.button("PLAY THE TRIAL AGAIN", "stone", 26, "play", 76)
+		tut.pressed.connect(func():
+			_clear(_overlay)
+			tutorial_pressed.emit())
+		v.add_child(tut)
 		var close := UI.button("DONE", "green", 40, "check", 100)
 		close.pressed.connect(func():
 			_clear(_overlay)

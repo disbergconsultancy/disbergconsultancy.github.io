@@ -54,6 +54,7 @@ var debris: Array = []
 # Worlds, planet hop and boss
 var boss: BossChase
 var theme_idx := 0
+var tut: Tutorial            # the trial world while it runs (null otherwise)
 var cycle := 0                 # endless loop: 0 = first time round the four planets, then forged bosses
 var world_start := 0.0         # angle at which this planet's laps began
 var world_lap := 0
@@ -104,6 +105,9 @@ func _ready() -> void:
 	hud.play_pressed.connect(start_run)
 	hud.again_pressed.connect(func(): start_boss_test(test_run) if test_run >= 0 else start_run())
 	hud.boss_test.connect(start_boss_test)
+	hud.tutorial_pressed.connect(func():
+		Progress.tutorial_done = false
+		start_run())
 	hud.settings_changed.connect(func():
 		Progress.save()
 		_apply_pixel_world())
@@ -155,6 +159,8 @@ func _ready() -> void:
 				_test["move"] = a.substr(5)
 			elif a in ["skills", "shop", "over", "heroes", "settings", "pause"]:
 				_test["screen"] = a
+	if not _test.is_empty():
+		Progress.tutorial_done = not ("trial" in args)   # tests skip the trial unless asked for
 
 
 ## The hero model or the block figure (menu setting). Both have the same interface.
@@ -222,6 +228,11 @@ func _set_planet(i: int, boss_def := {}) -> void:
 		th["boss"] = boss_def if not boss_def.is_empty() else Config.forge_boss(i, cycle)
 		th["boss_loops"] = th["boss_loops"] + mini(cycle, 2)
 		th["forged"] = true
+	_use_theme(th)
+
+
+## Builds a planet from a theme: globe, scenery, sky and haze.
+func _use_theme(th: Dictionary) -> void:
 	Config.THEME = th
 	planet.build(th)
 	_sky_mat.sky_top_color = th["sky_top"]
@@ -246,6 +257,7 @@ func _start_world() -> void:
 # =====================================================================
 
 func reset() -> void:
+	tut = null
 	boss.remove()
 	boss.kills = 0
 	planet.clear_items()
@@ -309,6 +321,21 @@ func start_run() -> void:
 	state = "run"
 	hud.show_run()
 	hud.flash("GO!")
+	if not Progress.tutorial_done and test_run < 0:
+		_start_trial()
+
+
+## The trial world: a small practice planet with tips and a training boss (tutorial.gd).
+func _start_trial() -> void:
+	theme_idx = -1
+	_use_theme(Config.trial_theme())
+	planet.clear_items()
+	_start_world()
+	spawner.stop_angle = angle             # only the tutorial's own obstacles
+	spawner.allow_powers = false
+	speed = Config.diff()["start"] * 0.85
+	tut = Tutorial.new(self)
+	tut.begin()
 
 
 func _to_menu() -> void:
@@ -376,6 +403,14 @@ func score() -> int:
 
 func crash(it: Item = null) -> void:
 	if god or pw["invuln"] > 0.0:
+		return
+	if tut:                       # the trial world forgives: try again
+		if it:
+			planet.hide_item(it)
+		pw["invuln"] = 1.0
+		shake = 0.3
+		hud.pop("OOPS! TRY AGAIN")
+		character.event("stumble")
 		return
 	if pw["shield"] > 0.0:
 		pw["shield"] = 0.0
@@ -468,11 +503,16 @@ func _update_hop(dt: float) -> void:
 		boss.remove()
 		planet.clear_items()
 		var nxt := (theme_idx + 1) % Config.THEMES.size()
-		if nxt == 0:
+		var new_loop := nxt == 0 and theme_idx >= 0     # (from the trial world it is the first loop)
+		if new_loop:
 			cycle += 1                 # a new loop: from now on the bosses are forged
 		_set_planet(nxt)
 		_start_world()
-		hud.flash(Config.THEME["name"] + ("\nNEW BOSSES!" if nxt == 0 else ""))
+		hud.flash(Config.THEME["name"] + ("\nNEW BOSSES!" if new_loop else ""))
+		if tut:                        # the trial world is done: on into the first world
+			tut.finish()
+			tut = null
+			spawner.allow_powers = true
 	if hop_t <= 0.0:
 		hud.fade.color.a = 0.0
 		py = maxf(py, 0.0)
@@ -513,6 +553,10 @@ func _on_tap() -> void:
 func _on_action(dir: String) -> void:
 	if state != "run":
 		return
+	if tut and tut.waiting:
+		if not tut.accepts(dir):
+			return
+		tut.resume()
 	match dir:
 		"left", "right":
 			var nl := clampi(lane + (-1 if dir == "left" else 1), -1, 1)
@@ -603,6 +647,10 @@ func activate(kind: String) -> void:
 
 ## Double-tap when the meter is full.
 func use_ability() -> void:
+	if tut and tut.waiting and state == "run":
+		if not tut.accepts("ability"):
+			return
+		tut.resume()
 	if state != "run" or meter < 1.0 or pw["orbit"] > 0.0 or ability_t > 0.0:
 		return
 	var d := Config.char_def()
@@ -725,6 +773,11 @@ func step(dt: float) -> void:
 			planet.rotation.x = fmod(angle, TAU)
 			spawner.update(angle)
 		return
+	if tut:                       # trial world: frozen while a tip waits for its gesture
+		tut.update()
+		if tut.waiting:
+			_update_hud()
+			return
 	var d: Dictionary = Config.diff()
 	speed = minf(d["max"], speed + d["accel"] * dt)
 	angle += speed / planet.radius * dt
@@ -1164,6 +1217,36 @@ func _set_build(c: String, alloc: Dictionary) -> void:
 	Progress.prog[c] = {"lvl": 20, "xp": 0, "alloc": alloc}
 
 
+## The trial world, played by a bot that answers each tip with the asked move.
+func _autotest_trial(dt: float) -> void:
+	god = false
+	Progress.tutorial_done = false
+	start_run()
+	var tips := []
+	var oops := 0
+	var t := 0.0
+	while state == "run" and t < 150.0 and not Progress.tutorial_done:
+		if tut and tut.waiting:
+			tips.append(tut.need)
+			match tut.need:
+				"lr":
+					_on_action("left" if lane >= 0 else "right")
+				"ability":
+					use_ability()
+				_:
+					_on_action(tut.need)
+		else:
+			_bot_drive()
+		var inv: float = pw["invuln"]
+		step(dt)
+		if pw["invuln"] > inv + 0.5:
+			oops += 1
+		t += dt
+	print("AUTOTEST trial: tips %s, oops %d, done %s, now on %s after %.0f s, state %s" % [
+		tips, oops, Progress.tutorial_done, Config.THEME["name"], t, state])
+	Progress.tutorial_done = true
+
+
 func _autotest_phase4(dt: float) -> void:
 	var saved := Progress.prog.duplicate(true)
 	print("AUTOTEST levels: xp for level 2 = %d, level 20 total = %d, points at 8/9/10/20 = %d/%d/%d/%d" % [
@@ -1547,6 +1630,9 @@ func _autotest_tick() -> void:
 		_test["phase"] = "phase4"
 	elif _test["phase"] == "phase4":
 		_autotest_phase4(dt)
+		_test["phase"] = "trial"
+	elif _test["phase"] == "trial":
+		_autotest_trial(dt)
 		_test["phase"] = "fair"
 	elif _test["phase"] == "fair":
 		_autotest_fairness(dt)

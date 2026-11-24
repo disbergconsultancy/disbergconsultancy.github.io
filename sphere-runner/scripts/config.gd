@@ -232,6 +232,20 @@ func forge_boss(i: int, cycle: int, seed_extra := 0, force_arch := "") -> Dictio
 	return b
 
 
+## The trial world (first run): a small Meadow-like planet with a gentle training boss.
+func trial_theme() -> Dictionary:
+	var t: Dictionary = THEMES[0].duplicate(true)
+	t["name"] = "TRIAL"
+	t["radius"] = 30.0
+	t["laps_to_boss"] = 2
+	t["boss_loops"] = 1
+	t["flag"] = "yellow"
+	t["boss"] = {"name": "TRAINING GOLEM", "block": "stone", "body": Color("8a8f7a"), "eye": Color("ffe14d"),
+		"wave": Color("a8ff6a"), "glow": 0.0, "archetype": "gate_walker", "signature": {},
+		"throws": {"smash": 70, "block": 0, "sweep_low": 30, "sweep_high": 0, "stomp": 0}, "combo": 0.0, "rate": 0.45}
+	return t
+
+
 func diff() -> Dictionary:
 	return DIFF[difficulty]
 
