@@ -1325,7 +1325,7 @@ func _autotest_missions() -> void:
 
 ## Presses at a point of a hero card (local to `on`, default the middle card), drags by
 ## `drag` (in screen pixels) and releases, like a finger; returns what `check` reads after.
-func _test_touch(local: Vector2, drag: Vector2, check: Callable, on: Control = null) -> Variant:
+func _test_touch(local: Vector2, drag: Vector2, check: Callable, on: Control = null, touch := false, ms_per_move := 2) -> Variant:
 	if on == null:
 		on = hud._holder
 	var vp := get_viewport()
@@ -1337,20 +1337,28 @@ func _test_touch(local: Vector2, drag: Vector2, check: Callable, on: Control = n
 	steps.append([false, at + drag])
 	for st in steps:
 		var ev: InputEvent
-		if st[0] is String:
+		if touch:                      # a finger: screen touch and drag events
+			if st[0] is String:
+				ev = InputEventScreenDrag.new()
+			else:
+				ev = InputEventScreenTouch.new()
+				ev.pressed = st[0]
+			ev.position = st[1]
+		elif st[0] is String:
 			ev = InputEventMouseMotion.new()
 			ev.button_mask = MOUSE_BUTTON_MASK_LEFT
+			ev.position = st[1]
+			ev.global_position = st[1]
 		else:
 			ev = InputEventMouseButton.new()
 			ev.button_index = MOUSE_BUTTON_LEFT
 			ev.pressed = st[0]
-		ev.position = st[1]
-		ev.global_position = st[1]
+			ev.position = st[1]
+			ev.global_position = st[1]
 		Input.parse_input_event(ev)
-		for i in 2:
+		for i in ms_per_move:
 			await get_tree().process_frame
-	for i in 40:
-		await get_tree().process_frame
+	await get_tree().create_timer(0.7).timeout     # let a slide or flip finish (real time)
 	return check.call()
 
 
@@ -1817,7 +1825,32 @@ func _autotest_tick() -> void:
 			var side: Control = hud._cards.filter(func(e): return e["k"] == 1)[0]["node"]
 			out.append("tap right card -> hero %s" % await _test_touch(Vector2(40.0, side.size.y / 2.0), Vector2.ZERO, func(): return Config.character, side))
 			out.append("swipe left -> hero %s" % await _test_touch(hud._holder.size / 2.0, Vector2(-260, 0), func(): return Config.character))
+			var t := []                 # the same with a finger, starting on different parts of the cards
+			Config.character = "runner"
+			hud.show_tab("heroes")
+			for i in 5:
+				await get_tree().process_frame
+			t.append("swipe on portrait -> %s" % await _test_touch(Vector2(hud._holder.size.x / 2.0, 120), Vector2(-220, 10), func(): return Config.character, null, true))
+			t.append("swipe on stats -> %s" % await _test_touch(Vector2(hud._holder.size.x * 0.7, hud._holder.size.y - 120), Vector2(200, -20), func(): return Config.character, null, true))
+			t.append("short swipe -> %s" % await _test_touch(Vector2(hud._holder.size.x / 2.0, 300), Vector2(-90, 0), func(): return Config.character, null, true, 1))
+			var sd: Control = hud._cards.filter(func(e): return e["k"] == -1)[0]["node"]
+			t.append("swipe from left card -> %s" % await _test_touch(Vector2(sd.size.x - 40.0, 200), Vector2(240, 0), func(): return Config.character, sd, true))
+			t.append("tap card -> flipped %s" % await _test_touch(Vector2(hud._holder.size.x / 2.0, 200), Vector2.ZERO, func(): return hud._flipped, null, true))
+			Progress.prog[Config.character]["lvl"] = 5
+			hud._render_heroes()
+			for i in 5:
+				await get_tree().process_frame
+			var learn: Button = hud._holder.find_children("*", "Button", true, false).filter(func(bt): return UI.get_text(bt).begins_with("LEARN"))[0]
+			hud._sk_sel = Vector2i(0, 0)
+			hud._render_heroes()
+			for i in 5:
+				await get_tree().process_frame
+			learn = hud._holder.find_children("*", "Button", true, false).filter(func(bt): return UI.get_text(bt).begins_with("LEARN"))[0]
+			var before := Progress.spent(Config.character)
+			await _test_touch(learn.size / 2.0, Vector2.ZERO, func(): return 0, learn, true)
+			t.append("Learn on the open card -> points spent %d -> %d, still open %s" % [before, Progress.spent(Config.character), hud._flipped])
 			print("AUTOTEST hero cards (window %s): %s" % [DisplayServer.window_get_size(), ", ".join(out)])
+			print("AUTOTEST hero cards by touch: %s" % ", ".join(t))
 			get_tree().quit()
 			return
 		if _test.get("screen", "") == "flipreel":     # frames of the hero card flip, flip back and a swipe

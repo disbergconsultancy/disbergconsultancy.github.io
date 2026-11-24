@@ -701,7 +701,6 @@ func _render_heroes() -> void:
 	_car.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_car.offset_top = 140
 	_car.offset_bottom = -186
-	_car.gui_input.connect(_car_input)
 	_cards.clear()
 	_dx = 0.0
 	_flipping = false
@@ -781,25 +780,53 @@ func _card_rect(n: Control) -> Rect2:
 	return n.get_transform() * Rect2(Vector2.ZERO, n.size)
 
 
-func _car_input(ev: InputEvent) -> void:
-	if _flipping:
+## Carousel input, read from the raw touches (and a real mouse) so it works wherever the
+## finger lands: a swipe moves the cards, a tap flips the middle card or picks a side card.
+## While the card is open, touches on it are left to its buttons; a tap beside it closes it.
+func _input(ev: InputEvent) -> void:
+	if _car == null or not is_instance_valid(_car) or not _car.is_visible_in_tree() or _overlay.get_child_count() > 0:
 		return
-	if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
-		if ev.pressed:
-			_drag = {"x0": ev.position.x, "dx": 0.0}
-		elif not _drag.is_empty():
-			var dx: float = _drag["dx"]
+	var kind := ""
+	if ev is InputEventScreenTouch and ev.index == 0:
+		kind = "down" if ev.pressed else "up"
+	elif ev is InputEventScreenDrag and ev.index == 0:
+		kind = "move"
+	elif ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT and ev.device != InputEvent.DEVICE_ID_EMULATION:
+		kind = "down" if ev.pressed else "up"
+	elif ev is InputEventMouseMotion and ev.device != InputEvent.DEVICE_ID_EMULATION:
+		kind = "move"
+	if kind == "":
+		return
+	var at: Vector2 = _car.make_input_local(ev).position
+	match kind:
+		"down":
+			if _flipping or not Rect2(Vector2.ZERO, _car.size).has_point(at):
+				return
+			if _flipped and _card_rect(_holder).has_point(at):
+				return                     # the open card's own buttons
+			_drag = {"x0": at.x, "t0": Time.get_ticks_msec()}
+		"move":
+			if _drag.is_empty() or _flipped:
+				return
+			_dx = at.x - _drag["x0"]
+			_layout_cards()
+		"up":
+			if _drag.is_empty():
+				return
+			var dx: float = at.x - _drag["x0"]
+			var quick: bool = Time.get_ticks_msec() - _drag["t0"] < 250
 			_drag = {}
 			if _flipped:
-				if not _card_rect(_holder).has_point(ev.position):
+				if absf(dx) < 30.0 and not _card_rect(_holder).has_point(at):
 					_flip()                # a tap beside the open card turns it back
 				return
 			var gap := _front_size().x * 0.86 + 20.0
-			if absf(dx) > 90.0:
+			if absf(dx) > 70.0 or (quick and absf(dx) > 30.0):
 				_slide_to(1 if dx < 0.0 else -1, gap)
 			elif absf(dx) < 16.0:
 				for e in _cards:       # a tap: the middle card flips, a side card comes to the middle
-					if _card_rect(e["node"]).has_point(ev.position):
+					if _card_rect(e["node"]).has_point(at):
+						_snap_back()
 						if e["k"] == 0:
 							_flip()
 						else:
@@ -808,10 +835,6 @@ func _car_input(ev: InputEvent) -> void:
 				_snap_back()
 			else:
 				_snap_back()
-	elif ev is InputEventMouseMotion and not _drag.is_empty() and not _flipped:
-		_drag["dx"] = ev.position.x - _drag["x0"]
-		_dx = _drag["dx"]
-		_layout_cards()
 
 
 func _set_dx(v: float) -> void:
