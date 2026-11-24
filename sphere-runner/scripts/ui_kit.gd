@@ -196,6 +196,16 @@ static func seg_bar(total: int, cell := Vector2(20, 24), gap := 4) -> PanelConta
 	return frame
 
 
+## One small pixel block (a level pip, a rank pip, a page dot), bevelled like the bars.
+static func cell(color: Color, size := Vector2(24, 24)) -> ColorRect:
+	var c := ColorRect.new()
+	c.custom_minimum_size = size
+	c.color = color
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bevel(c, size)
+	return c
+
+
 ## A pixel block bevel on a bar cell, like the buttons: light top and left edges, a darker
 ## bottom and right. Overlays, so the cell keeps its own colour.
 static func _bevel(c: ColorRect, cell: Vector2) -> void:

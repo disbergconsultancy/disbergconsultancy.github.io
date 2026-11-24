@@ -633,11 +633,7 @@ func _hero_back(c: String) -> Control:
 			var pips := _hbox(5)
 			pips.alignment = BoxContainer.ALIGNMENT_CENTER
 			for i in Progress.max_rank(tier):
-				var pip := ColorRect.new()
-				pip.custom_minimum_size = Vector2(12, 12)
-				pip.color = colr if i < rank else Color("2b2d36")
-				pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-				pips.add_child(pip)
+				pips.add_child(UI.cell(colr if i < rank else Color("2b2d36"), Vector2(14, 14)))
 			col.add_child(pips)
 		grid.add_child(col)
 	tree_card.add_child(grid)
@@ -726,10 +722,7 @@ func _render_heroes() -> void:
 	var dots := _hbox(14)
 	dots.alignment = BoxContainer.ALIGNMENT_CENTER
 	for k in keys.size():
-		var dot := ColorRect.new()
-		dot.custom_minimum_size = Vector2(22, 22)
-		dot.color = UI.GOLD if k == i else Color("4a4a50")
-		dots.add_child(dot)
+		dots.add_child(UI.cell(UI.GOLD if k == i else Color("4a4a50"), Vector2(24, 24)))
 	under.add_child(dots)
 	var hint := UI.label("Swipe for other heroes · the middle one runs", 24, Color("e8e8ec"), 500)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -974,10 +967,7 @@ func _render_shop() -> void:
 		info.add_child(desc)
 		var pips := _hbox(6)
 		for i in u["max"]:
-			var pip := ColorRect.new()
-			pip.custom_minimum_size = Vector2(24, 24)
-			pip.color = Color(u["color"]) if i < l else Color("2b2d36")
-			pips.add_child(pip)
+			pips.add_child(UI.cell(Color(u["color"]) if i < l else Color("2b2d36"), Vector2(26, 26)))
 		info.add_child(pips)
 		row.add_child(info)
 		var price: int = u["prices"][l] if l < u["max"] else 0
