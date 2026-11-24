@@ -342,6 +342,41 @@ func _box(size: Vector3, color: Color, glow := 0.0) -> MeshInstance3D:
 	return mi
 
 
+static var _coin_meshes: Array = []
+
+
+## A low-poly coin: a dark gold rim, a raised bright face on both sides and a slot in the
+## middle (like the coin icon). It stands upright and spins around its vertical axis.
+func _coin() -> Node3D:
+	if _coin_meshes.is_empty():
+		var rim := CylinderMesh.new()
+		rim.top_radius = 0.26
+		rim.bottom_radius = 0.26
+		rim.height = 0.07
+		rim.radial_segments = 12
+		rim.rings = 1
+		var face := CylinderMesh.new()
+		face.top_radius = 0.2
+		face.bottom_radius = 0.2
+		face.height = 0.1
+		face.radial_segments = 12
+		face.rings = 1
+		var slot := BoxMesh.new()
+		slot.size = Vector3(0.06, 0.12, 0.2)
+		_coin_meshes = [rim, face, slot]
+	var holder := Node3D.new()
+	var tilt := Node3D.new()                   # discs are made lying flat: stand them up
+	tilt.rotation.x = PI / 2.0
+	holder.add_child(tilt)
+	var parts := [[_coin_meshes[0], mat(Color("c8901a"), 0.25)], [_coin_meshes[1], mat(Color("ffd34a"), 0.45)], [_coin_meshes[2], mat(Color("b07d10"), 0.2)]]
+	for pm in parts:
+		var mi := MeshInstance3D.new()
+		mi.mesh = pm[0]
+		mi.material_override = pm[1]
+		tilt.add_child(mi)
+	return holder
+
+
 ## Create an item and its visuals. opts: w, h, depth, y0 (all optional).
 func add_item(kind: String, phi: float, x: float, opts := {}) -> Item:
 	var k: Dictionary = Config.KIND[kind]
@@ -376,7 +411,7 @@ func add_item(kind: String, phi: float, x: float, opts := {}) -> Item:
 		"PIT":
 			it.parts.append({"node": _box(Vector3(w, h, depth), color, 1.2), "dm": 0.0, "y": 0.03})
 		"COIN":
-			it.parts.append({"node": _box(Vector3(w, h, depth), color, 0.4), "dm": 0.0, "y": it.y0 + h / 2.0, "spin": true})
+			it.parts.append({"node": _coin(), "dm": 0.0, "y": it.y0 + h / 2.0, "spin": true})
 		"MARK":
 			# Red warning marker on the track where a boss throw will land.
 			var mm := MeshInstance3D.new()
