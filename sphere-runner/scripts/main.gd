@@ -68,6 +68,10 @@ var hang_used := 0.0
 var slip_t := 0.0
 var smashes := 0
 var stumbles_left := 0
+var run_ct := {}              # this run's counts for missions (jumps, slides, power-ups, hops...)
+var _kills_seen := 0
+var _live_done := {}          # missions already announced during this run
+var _mission_t := 0.0
 var last_hit := ""             # what ended the last run (self-test reports)
 var _sky_mat: ProceduralSkyMaterial
 var _env: Environment         # [{ "node": MeshInstance3D, "v": Vector3, "life": float }]
@@ -143,6 +147,8 @@ func _ready() -> void:
 				character.build(Config.char_def())
 	elif "--autotest" in args:
 		_test = {"phase": "god", "kinds": {}, "frames": 0}
+	elif "--runstats" in args:      # how long runs last and what they earn, played by human-like bots
+		_test = {"phase": "runs"}
 	elif "--shot" in args:
 		# Screenshot: --shot <file.png> <seconds into an invincible run> [menu]
 		var i := args.find("--shot")
@@ -161,7 +167,7 @@ func _ready() -> void:
 				_test["row"] = a.substr(4)
 			elif a.begins_with("move="):     # force this boss move for the shot (e.g. move=rolling_boulder)
 				_test["move"] = a.substr(5)
-			elif a in ["skills", "shop", "over", "heroes", "settings", "pause"]:
+			elif a in ["skills", "shop", "over", "heroes", "settings", "pause", "missions"]:
 				_test["screen"] = a
 	if not _test.is_empty():
 		Progress.tutorial_done = not ("trial" in args)   # tests skip the trial unless asked for
@@ -300,6 +306,9 @@ func reset() -> void:
 	hang_used = 0.0
 	slip_t = 0.0
 	smashes = 0
+	run_ct = {"jump": 0, "slide": 0, "power": 0, "hops": 0, "clean_boss": 0}
+	_kills_seen = 0
+	_live_done = {}
 	stumbles_left = Progress.stumbles_per_run()
 	meter = 0.0
 	ability_t = 0.0
@@ -440,12 +449,12 @@ func crash(it: Item = null) -> void:
 		combo = 0
 		combo_t = 0.0
 		combo_level = 1
-		meter = meter * 0.5 if lv >= 2 else 0.0
-		speed *= 0.88 if lv >= 2 else 0.8
+		meter = meter * 0.5 if lv >= 1 else 0.0
+		speed *= 0.88 if lv >= 1 else 0.8
 		pw["invuln"] = 0.8
 		character.event("stumble")
 		shake = 0.45
-		hud.flash("STUMBLE!" + ("\n1 left" if stumbles_left > 0 else ""))
+		hud.flash("STUMBLE!" + ("\n%d left" % stumbles_left if stumbles_left > 0 else ""))
 		sfx.play("stumble")
 		_buzz(40)
 		return
@@ -524,10 +533,46 @@ func _update_hop(dt: float) -> void:
 			tut.finish()
 			tut = null
 			spawner.allow_powers = true
+		else:
+			run_ct["hops"] = run_ct.get("hops", 0) + 1
 	if hop_t <= 0.0:
 		hud.fade.color.a = 0.0
 		py = maxf(py, 0.0)
 		vy = -5.0
+
+
+## Missions count real runs only (not boss tests, the trial world or self-tests).
+func _missions_on() -> bool:
+	return test_run < 0 and tut == null and not god and (_test.is_empty() or _test.get("missions", false))
+
+
+func _run_counts() -> Dictionary:
+	var rc := run_ct.duplicate()
+	rc["coins"] = coins
+	rc["close"] = close_calls
+	rc["close_" + Config.character] = close_calls
+	rc["smash"] = smashes
+	rc["dist"] = int(dist)
+	rc["boss"] = boss.kills
+	return rc
+
+
+## During a run: a boss beaten without a stumble, and a pop-up when a mission is done.
+func _check_missions(dt: float) -> void:
+	if boss.kills > _kills_seen:
+		_kills_seen = boss.kills
+		if stumbles_left == Progress.stumbles_per_run():
+			run_ct["clean_boss"] = 1
+	_mission_t -= dt
+	if _mission_t > 0.0 or not _missions_on():
+		return
+	_mission_t = 0.5
+	var rc := _run_counts()
+	for m in Progress.missions["list"]:
+		if not m["done"] and not _live_done.has(m["id"]) and Missions.value(m, rc) >= m["target"]:
+			_live_done[m["id"]] = true
+			hud.pop("MISSION DONE!")
+			sfx.play("lap")
 
 
 func _game_over() -> void:
@@ -542,7 +587,8 @@ func _game_over() -> void:
 	var s := score()
 	var is_best := Progress.record_run(int(dist), s)
 	best = Progress.best_score()
-	var aw := Progress.award(Config.character, int(dist / 4.0) + coins * 2 + close_calls * 5 + smashes * 3 + boss.kills * 250)
+	var ms: Dictionary = Progress.settle_missions(_run_counts()) if _missions_on() else {}
+	var aw := Progress.award(Config.character, int(dist / 4.0) + coins * 2 + close_calls * 5 + smashes * 3 + boss.kills * 250 + ms.get("xp", 0))
 	Progress.wallet += coins
 	Progress.save()
 	var p: Dictionary = Progress.prog[Config.character]
@@ -555,7 +601,7 @@ func _game_over() -> void:
 		"rows": [["Distance", "%d m" % int(dist)], ["Coins", "+%d" % coins], ["Close calls", close_calls], ["Bosses", boss.kills]],
 		"xp_text": "+%d XP · %s LV %d  (%s)" % [aw["xp"], Config.CHARS[Config.character]["name"].to_upper(), p["lvl"], xp_line],
 		"xp_frac": 1.0 if p["lvl"] >= Progress.MAX_LEVEL else float(p["xp"]) / need,
-		"level_up": level_line.strip_edges()})
+		"level_up": level_line.strip_edges(), "missions": ms})
 
 
 func _on_tap() -> void:
@@ -596,6 +642,7 @@ func _on_action(dir: String) -> void:
 				return
 			if grounded and slide_t <= 0.0:
 				character.event("slide")
+				run_ct["slide"] = run_ct.get("slide", 0) + 1
 			slide_t = Config.SLIDE_TIME
 			if not grounded:
 				vy = Config.SLAM_V * st["slam_mul"]
@@ -612,6 +659,7 @@ func _on_ice() -> bool:
 
 
 func _jump() -> void:
+	run_ct["jump"] = run_ct.get("jump", 0) + 1
 	character.event("jump" if grounded else "jump2")
 	slide_t = 0.0
 	vy = st["jump_v"]
@@ -646,6 +694,7 @@ func _mult() -> int:
 # =====================================================================
 
 func activate(kind: String) -> void:
+	run_ct["power"] = run_ct.get("power", 0) + 1
 	sfx.play("power")
 	hud.flash(Config.POWERS[kind]["label"])
 	if kind == "shield":
@@ -843,6 +892,7 @@ func step(dt: float) -> void:
 	spawner.speed = speed
 	spawner.update(angle)
 	_collide()
+	_check_missions(dt)
 	_update_hud()
 
 
@@ -1122,10 +1172,18 @@ func _sim(seconds: float, dt: float) -> float:
 var _bot_log: Array = []
 
 
-func _bot_drive() -> void:
+## human (optional): plays like a person: {"react": s an obstacle must be in view before
+## it is noticed, "jitter": s of timing error on jumps and slides, "miss": chance to
+## overlook an obstacle}. _bot_clock: seconds played (advanced by the caller).
+var _bot_clock := 0.0
+
+
+func _bot_drive(human := {}) -> void:
 	var lethal := {-1: 99.0, 0: 99.0, 1: 99.0}     # nearest "switch lane" hazard per lane
 	var jump_d := 99.0
 	var slide_d := 99.0
+	var jump_err := 0.0
+	var slide_err := 0.0
 	for it in planet.items:
 		if not it.alive or not (it.kind in Config.HAZARDS or it.kind == "ICE"):
 			continue
@@ -1134,6 +1192,13 @@ func _bot_drive() -> void:
 		var d := _ahead_m(it)
 		if d < -(it.hd + 0.5) or d > 30.0:
 			continue
+		if not human.is_empty():
+			if not it.has_meta("seen_t"):
+				it.set_meta("seen_t", _bot_clock)
+				it.set_meta("missed", randf() < human["miss"])
+				it.set_meta("t_err", randfn(0.0, human["jitter"]))
+			if it.get_meta("missed") or _bot_clock - it.get_meta("seen_t") < human["react"]:
+				continue
 		var near := d - it.hd          # distance to its front edge
 		for l in [-1, 0, 1]:
 			var xs: Array = [it.x]
@@ -1149,10 +1214,15 @@ func _bot_drive() -> void:
 			if blocks:
 				lethal[l] = minf(lethal[l], maxf(near, 0.0))
 			elif l == lane:
+				var err: float = it.get_meta("t_err", 0.0) * speed
 				if it.kind in ["HIGH", "SWEEPHIGH", "VINE", "SWOOP"]:
-					slide_d = minf(slide_d, near)
+					if near < slide_d:
+						slide_d = near
+						slide_err = err
 				else:
-					jump_d = minf(jump_d, near)
+					if near < jump_d:
+						jump_d = near
+						jump_err = err
 	if OS.get_cmdline_user_args().has("--debugfair"):
 		_bot_log.append("lane %d grounded %s ice %s lethal %s jump %.1f slide %.1f" % [lane, grounded, _on_ice(), lethal, jump_d, slide_d])
 		if _bot_log.size() > 40:
@@ -1164,9 +1234,9 @@ func _bot_drive() -> void:
 				best = l
 		if best != lane:
 			_on_action("left" if best < lane else "right")
-	if jump_d < 3.4 and jump_d > -0.5 and grounded:
+	if jump_d < 3.4 + jump_err and jump_d > -0.5 and grounded:
 		_on_action("up")
-	elif slide_d < 3.2 and slide_d > -0.5 and slide_t <= 0.0:
+	elif slide_d < 3.2 + slide_err and slide_d > -0.5 and slide_t <= 0.0:
 		_on_action("down")
 
 
@@ -1198,6 +1268,7 @@ func _autotest_fairness(dt: float) -> void:
 				step(dt)
 				guard += 1
 			god = false
+			stumbles_left = 0
 			for it in planet.items:      # judge the boss only: drop leftover run obstacles from the run-up
 				if not it.boss and it.kind in Config.HAZARDS:
 					planet.hide_item(it)
@@ -1227,6 +1298,94 @@ func _autotest_fairness(dt: float) -> void:
 		print("AUTOTEST fairness %s (%s): bot beat it %d/%d, deaths %s, signature moves seen: %s" % [
 			Config.THEME["boss"]["name"], Config.THEME["boss"]["archetype"], wins, attempts, deaths, ", ".join(signature_seen.keys())])
 	Progress.core = saved_core
+
+
+## Missions: totals add up over runs, "one run" goals do not; rewards, set bonus, next set.
+func _autotest_missions() -> void:
+	var saved: Dictionary = Progress.missions.duplicate(true)
+	var wallet0: int = Progress.wallet
+	Progress.missions = {"set": 0, "list": Missions.make_set(0)}     # 150 coins, 40 jumps, 600 m in one run
+	var a := Progress.settle_missions({"coins": 100, "jump": 25, "dist": 400})
+	var b := Progress.settle_missions({"coins": 60, "jump": 20, "dist": 450})
+	var mid := Progress.missions_done()
+	var c := Progress.settle_missions({"coins": 0, "jump": 0, "dist": 700})
+	print("AUTOTEST missions: run 1 done %s, run 2 done %s (coins +%d, xp +%d), run 3 done %s set complete %s bonus %d, now set %d: %s; wallet +%d" % [
+		a["new"], b["new"], b["coins"], b["xp"], c["new"], c["set_done"], c["bonus"], Progress.missions["set"],
+		", ".join(Progress.missions["list"].map(func(m): return Missions.text(m))), Progress.wallet - wallet0])
+	var sets := []
+	for k in range(1, 9):
+		sets.append("/".join(Missions.make_set(k).map(func(m): return m["id"])))
+	print("AUTOTEST mission sets 2-9: ", "  ".join(sets))
+	Progress.missions = saved
+	Progress.wallet = wallet0
+	Progress.save()
+
+
+## --runstats [runs=N] [diff=medium]: a fresh level-1 Runner (no skills, no shop upgrades)
+## played by three human-like bots. Prints how long runs last and what they earn.
+func _runstats(dt: float) -> void:
+	var n := 20
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("runs="):
+			n = int(a.substr(5))
+		elif a.begins_with("diff="):
+			Config.difficulty = a.substr(5)
+		elif a.begins_with("who="):
+			_test["who"] = a.substr(4).split(",")
+	var saved_prog: Dictionary = Progress.prog.duplicate(true)
+	var saved_core: Dictionary = Progress.core.duplicate()
+	var saved_wallet: int = Progress.wallet
+	Config.character = "runner"
+	Progress.prog["runner"] = {"lvl": 1, "xp": 0, "alloc": {}}
+	Progress.core = {"luck": 0, "dur": 0, "stumble": 0}
+	character.build(Config.char_def())
+	var players := {"new player": {"react": 0.45, "jitter": 0.07, "miss": 0.03},
+		"regular": {"react": 0.35, "jitter": 0.05, "miss": 0.015},
+		"skilled": {"react": 0.25, "jitter": 0.035, "miss": 0.006}}
+	for who in players:
+		if _test.has("who") and not (who.split(" ")[0] in _test["who"]):
+			continue
+		var times := []
+		var dists := []
+		var xps := []
+		var coin_l := []
+		var worlds := []
+		var causes := {}
+		var bosses := 0
+		for r in n:
+			god = false
+			start_run()
+			_bot_clock = 0.0
+			var k := 0
+			while state == "run" and _bot_clock < 600.0:
+				_bot_drive(players[who])
+				step(dt)
+				_bot_clock += dt
+				k += 1
+				if k % 300 == 0:
+					await get_tree().process_frame     # let the engine catch up (queued UI updates)
+			if OS.get_cmdline_user_args().has("each"):
+				print("  run %d: %.0f s, %d m, %s, %d stumbles used, ended by %s" % [r, _bot_clock, int(dist), Config.THEME["name"], Progress.stumbles_per_run() - stumbles_left, last_hit])
+			times.append(_bot_clock)
+			dists.append(dist)
+			coin_l.append(coins)
+			xps.append(int(dist / 4.0) + coins * 2 + close_calls * 5 + smashes * 3 + boss.kills * 250)
+			worlds.append(Config.THEME["name"])
+			bosses += boss.kills
+			causes[last_hit] = causes.get(last_hit, 0) + 1
+		times.sort()
+		dists.sort()
+		xps.sort()
+		coin_l.sort()
+		var wc := {}
+		for w in worlds:
+			wc[w] = wc.get(w, 0) + 1
+		print("RUNSTATS %-10s %s: time median %.0f s (%.0f-%.0f), distance median %d m, coins median %d, xp median %d (%d-%d), bosses beaten %d in %d runs, ended in %s, killed by %s" % [
+			who, Config.difficulty, times[n / 2], times[0], times[n - 1], int(dists[n / 2]), coin_l[n / 2], xps[n / 2], xps[0], xps[n - 1], bosses, n, wc, causes])
+	Progress.prog = saved_prog
+	Progress.core = saved_core
+	Progress.wallet = saved_wallet
+	Progress.save()
 
 
 func _set_build(c: String, alloc: Dictionary) -> void:
@@ -1596,7 +1755,15 @@ func _autotest_tick() -> void:
 					hud.show_tab("heroes")
 				"settings":
 					hud.show_settings(false)
+				"missions":
+					Progress.missions = {"set": 2, "list": Missions.make_set(2)}
+					Progress.missions["list"][0]["prog"] = Progress.missions["list"][0]["target"] - 3
+					Progress.missions["list"][1]["done"] = true
+					hud.show_missions()
 				"over":
+					Progress.missions = {"set": 0, "list": Missions.make_set(0)}
+					Progress.missions["list"][1]["prog"] = 38     # 40 jumps: done during this run
+					_test["missions"] = true
 					start_run()
 					god = false
 					for i in 600:
@@ -1662,11 +1829,16 @@ func _autotest_tick() -> void:
 		_autotest_phase4(dt)
 		_test["phase"] = "trial"
 	elif _test["phase"] == "trial":
+		_autotest_missions()
 		_autotest_trial(dt)
 		_test["phase"] = "fair"
 	elif _test["phase"] == "fair":
 		_autotest_fairness(dt)
 		_test["phase"] = "real"
+	elif _test["phase"] == "runs":
+		_test["phase"] = "busy"
+		await _runstats(dt)
+		get_tree().quit()
 	elif _test["phase"] == "real":
 		god = false
 		start_run()

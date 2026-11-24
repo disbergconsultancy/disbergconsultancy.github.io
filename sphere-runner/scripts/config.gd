@@ -25,7 +25,7 @@ const HIT_PAUSE := 0.25
 
 # --- World and pacing -------------------------------------------------
 const GLOBE_R := 45.0
-const LAP_BONUS := 1.5
+const LAP_BONUS := 0.75
 const SPAWN_AHEAD_M := 38.0
 const DESPAWN_BEHIND_M := 8.0
 const CALM_M := 70.0
@@ -34,11 +34,11 @@ const WAVE_M := {"easy": 220.0, "medium": 260.0, "hard": 300.0}
 # Difficulty: start/max speed (m/s), accel, row gap (s at current speed), min gap (m),
 # chance a lane is free (and how much it drops as speed rises), jump/slide chances, obstacles per row.
 const DIFF := {
-	"easy": {"start": 9.0, "max": 20.0, "accel": 0.15, "gap": 1.4, "min_gap": 14.0,
+	"easy": {"start": 9.0, "max": 20.0, "accel": 0.07, "gap": 1.4, "min_gap": 14.0,
 		"empty": 0.62, "empty_ramp": 0.10, "low": 0.18, "high": 0.12, "max_blocked": 1},
-	"medium": {"start": 10.5, "max": 25.0, "accel": 0.20, "gap": 1.1, "min_gap": 11.0,
+	"medium": {"start": 10.5, "max": 25.0, "accel": 0.10, "gap": 1.1, "min_gap": 11.0,
 		"empty": 0.52, "empty_ramp": 0.15, "low": 0.20, "high": 0.15, "max_blocked": 2},
-	"hard": {"start": 12.0, "max": 30.0, "accel": 0.28, "gap": 0.85, "min_gap": 9.0,
+	"hard": {"start": 12.0, "max": 30.0, "accel": 0.14, "gap": 0.85, "min_gap": 9.0,
 		"empty": 0.45, "empty_ramp": 0.20, "low": 0.20, "high": 0.18, "max_blocked": 3},
 }
 

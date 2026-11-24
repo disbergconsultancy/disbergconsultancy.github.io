@@ -4,6 +4,14 @@ Status of ideas. Built items are listed briefly for context; the rest has design
 The Godot project (`sphere-runner/`) is the main version; the web prototype stays as a quick test bed.
 
 ## Built
+- Missions: three at a time in sets, shown on the home screen (Missions panel) and the run-over screen, with a
+  "MISSION DONE!" pop-up mid-run. Counts over all runs or within one run (coins, close calls, smashes, jumps,
+  slides, power-ups, distance, bosses, reaching a world, a boss without a stumble, close calls with a given hero).
+  Coins and XP per mission, a set bonus, then a harder set. No score multiplier (decided: the score is the run).
+- Longer runs: the speed ramp is half as steep (top speed after ~2.5 min instead of ~1), half the lap speed bonus,
+  and everyone has one stumble per run (the shop's Stumble guard makes it lighter, then 2, then 3). Measured with
+  human-like bots (`--runstats`): a new player's median run went from 23 s to 104 s (XP 147 -> 851, coins 38 -> 105),
+  a regular's from 67 s to 137 s.
 - Sound: chiptune music per world plus menu and boss (generated, `tools/gen_music.py`), sound effects from
   Kenney's CC0 packs (footsteps per world, 8-bit jingles), separate Music and Sound effects toggles, vibration
   (Android; iPhone browsers do not allow it) on crashes, stumbles, smashes, boss stomps, throws and defeats.
@@ -72,7 +80,7 @@ A boss is **composed from parts**, all data-driven:
   + a rising threat budget + generated name and palette. That gives endless, unique bosses.
 - Rewards: boss XP as now, a bonus for the first kill of each boss, boss missions (see 2).
 
-### 2. Missions
+### 2. Missions (BUILT, see above)
 - Three active missions at a time, shown on the menu and the crash screen.
 - Types: counts ("collect 300 coins", "20 close calls", "smash 15 blocks", "jump 40 times"),
   feats ("beat the Golem without a stumble", "reach Glacier", "a 2 km run"),

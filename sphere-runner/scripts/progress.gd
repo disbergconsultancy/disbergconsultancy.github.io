@@ -61,6 +61,7 @@ func _ready() -> void:
 # =====================================================================
 
 var tutorial_done := false    # the trial world has been played
+var missions := {"set": 0, "list": []}   # the active mission set (see missions.gd)
 
 
 func load_save() -> void:
@@ -69,7 +70,9 @@ func load_save() -> void:
 	for c in Config.CHARS:
 		prog[c] = cfg.get_value("prog", c, {"lvl": 1, "xp": 0, "alloc": {}}) if ok else {"lvl": 1, "xp": 0, "alloc": {}}
 	if not ok:
+		missions = {"set": 0, "list": Missions.make_set(0)}
 		return
+	missions = cfg.get_value("stats", "missions", {"set": 0, "list": Missions.make_set(0)})
 	wallet = cfg.get_value("core", "wallet", 0)
 	core = cfg.get_value("core", "levels", core)
 	runs = cfg.get_value("stats", "runs", {})
@@ -94,6 +97,7 @@ func save() -> void:
 	cfg.set_value("settings", "difficulty", Config.difficulty)
 	cfg.set_value("settings", "sound", Config.sound)
 	cfg.set_value("stats", "tutorial_done", tutorial_done)
+	cfg.set_value("stats", "missions", missions)
 	cfg.set_value("settings", "vibration", Config.vibration)
 	cfg.set_value("settings", "music", Config.music)
 	cfg.save(SAVE_PATH)
@@ -269,6 +273,41 @@ func stats(c: String = Config.character) -> Dictionary:
 
 
 # =====================================================================
+# Missions
+# =====================================================================
+
+## Settles the missions after a run (run: the run's counts). Pays coins into the wallet
+## and returns the XP for the run's hero, plus what to show on the run-over screen:
+## {"xp", "coins", "list" (the missions with this run included), "new" (ids just done),
+##  "set_done", "bonus"}.
+func settle_missions(run: Dictionary) -> Dictionary:
+	var s: int = missions["set"]
+	var out := {"xp": 0, "coins": 0, "new": [], "set_done": false, "bonus": 0}
+	for m in missions["list"]:
+		if m["done"]:
+			continue
+		m["prog"] = Missions.value(m, run)
+		if m["prog"] >= m["target"]:
+			m["done"] = true
+			out["new"].append(m["id"])
+			out["coins"] += Missions.reward_coins(s)
+			out["xp"] += Missions.reward_xp(s)
+	out["list"] = missions["list"].duplicate(true)
+	if missions["list"].all(func(m): return m["done"]):
+		out["set_done"] = true
+		out["bonus"] = Missions.set_bonus(s)
+		out["coins"] += out["bonus"]
+		missions = {"set": s + 1, "list": Missions.make_set(s + 1)}
+	wallet += out["coins"]
+	save()
+	return out
+
+
+func missions_done() -> int:
+	return missions["list"].filter(func(m): return m["done"]).size()
+
+
+# =====================================================================
 # Core shop
 # =====================================================================
 
@@ -277,10 +316,10 @@ static func core_text(k: String, l: int) -> String:
 		"luck": return "Power-ups appear %d%% more often" % (6 * l) if l > 0 else "Power-ups appear more often"
 		"dur": return "Magnet, x2 and Orbit last %d%% longer" % (10 * l) if l > 0 else "Magnet, x2 and Orbit last longer"
 		"stumble":
-			return ["Small hits (crate, bar, boulder, thrown log or bar, stomp wave) end the run",
-				"1 stumble per run: a small hit costs your combo, your whole meter and some speed",
-				"1 stumble per run, lighter: you keep half your meter",
-				"2 stumbles per run (lighter penalty)"][l]
+			return ["1 stumble per run: a small hit (crate, bar, boulder, thrown log or bar, stomp wave) costs your combo, your meter and some speed",
+				"Lighter stumbles: you keep half your meter and lose less speed",
+				"2 stumbles per run (lighter)",
+				"3 stumbles per run (lighter)"][l]
 	return ""
 
 
@@ -303,7 +342,7 @@ func dur_mul() -> float:
 
 
 func stumbles_per_run() -> int:
-	return 2 if core["stumble"] >= 3 else 1 if core["stumble"] >= 1 else 0
+	return 1 + (1 if core["stumble"] >= 2 else 0) + (1 if core["stumble"] >= 3 else 0)   # everyone has one
 
 
 # =====================================================================

@@ -21,6 +21,7 @@ Everything is built in code (no editor scenes besides `scenes/main.tscn`), so it
 | `scripts/spawner.gd` | Obstacle patterns (rows, ramps/roofs, corridor, zigzag, glowing floor, jump-slide, movers) and wave/calm pacing |
 | `scripts/item.gd` | One obstacle/coin/surface: logical box for collisions + visual parts |
 | `scripts/character.gd` | Block figure on a humanoid joint layout, toon animation: poses on springs (overshoot, follow-through), squash and stretch, one-off moves (takeoff, air-jump flip, lane hop, slide dust, landing dust, stumble, crash flop, cheer), menu idle |
+| `scripts/missions.gd` | Missions: three at a time in sets (counts over all runs or within one run), coin and XP rewards, a set bonus, then a harder set. No score multiplier |
 | `scripts/tutorial.gd` | Trial world: freezes before each new element with a gesture tip, training boss, planet hop into Meadow |
 | `scripts/ui_kit.gd` | Block-pixel UI kit: Pixelify Sans, block buttons and panels (9-patch textures), 8x8 pixel icons, segmented bars |
 | `assets/ui/` | UI textures generated from the agreed designs (buttons, panels, tiles, icons, hero portraits) |
@@ -44,8 +45,12 @@ skill effects (double jump, Meteor, Vault, Aftershock, Wrecking Ball), Stumble g
 a fairness check (a bot with perfect information plays every boss chase 10 times; all must be beatable),
 then a real run without input (must crash). Note: the self-test writes to this machine's save file.
 
+Run length and earnings: `godot --headless --path sphere-runner -- --runstats runs=30 [who=new,regular,skilled] [diff=medium] [each]`
+plays a fresh level-1 Runner with human-like bots (reaction time, timing errors, the odd missed obstacle) and
+prints median run time, distance, coins and XP. Use it before and after tuning speed or difficulty.
+
 Screenshot at N seconds into a run: `godot --path sphere-runner -- --shot out.png 8` (add `menu` for the menu,
-`char=smasher`, `power=orbit`, `ability`, `boss=N` for a boss test on planet N, or `menu skills` / `menu shop` / `menu over`, `move=<signature move>` with `boss=N`, e.g. `move=vine_sweep`, `meteor_shower`, `ice_lane`, `quake_rhythm`, `decoy`, `rolling_boulder`, `lava_trail`).
+`char=smasher`, `power=orbit`, `ability`, `boss=N` for a boss test on planet N, or `menu skills` / `menu shop` / `menu over` / `menu missions`, `row=HIGH` for a row of that kind just ahead, `move=<signature move>` with `boss=N`, e.g. `move=vine_sweep`, `meteor_shower`, `ice_lane`, `quake_rhythm`, `decoy`, `rolling_boulder`, `lava_trail`).
 
 ## Port status
 - **Phase 1 (done):** core run: planet, lanes, jump/float/slam/slide/air dash/jump buffer, ramps and roofs,

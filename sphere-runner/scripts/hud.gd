@@ -296,7 +296,13 @@ func set_info(coins_: int, where: String, kmh: int) -> void:
 
 
 ## powers: [[icon, text, color], ...]
+var _powers_shown: Array = []
+
+
 func set_powers(list: Array) -> void:
+	if list == _powers_shown:          # rebuild only when something changed
+		return
+	_powers_shown = list.duplicate(true)
 	_clear(_powers_row)
 	for p in list:
 		_powers_row.add_child(UI.chip([UI.icon(p[0], 32, p[2]), UI.label(p[1], 28)], "chip", Vector2(0, 64)))
@@ -457,7 +463,11 @@ func _render_home() -> void:
 	var chips := _hbox(14)
 	chips.alignment = BoxContainer.ALIGNMENT_CENTER
 	chips.add_child(UI.chip([UI.icon("star", 32, UI.GOLD), UI.label("Best %d" % _best, 28)], "chip", Vector2(0, 64)))
-	chips.add_child(UI.chip([UI.label(Config.THEME["name"].capitalize(), 28)], "chip", Vector2(0, 64)))
+	var mis := UI.button("Missions %d/3" % Progress.missions_done(), "stone", 28, "check", 64, false, 32)
+	mis.custom_minimum_size.x = 250
+	UI.set_icon_color(mis, Color("5fd36a"))
+	mis.pressed.connect(show_missions)
+	chips.add_child(mis)
 	col.add_child(chips)
 	_anchor(col, p, 44, -428, 44, 1.0)
 
@@ -848,6 +858,65 @@ func show_settings(paused: bool) -> void:
 	_place(panel, _overlay, 44, 110, 44)
 
 
+## The missions panel (from the home screen).
+func show_missions() -> void:
+	_clear(_overlay)
+	var dim := ColorRect.new()
+	dim.color = Color(0.06, 0.07, 0.1, 0.6)
+	_overlay.add_child(_full(dim))
+	var panel := UI.panel("panel_stone", 22)
+	var v := _vbox(18)
+	panel.add_child(v)
+	var title := UI.label("MISSIONS", 70, Color.WHITE, 700, true)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(title)
+	var s: int = Progress.missions["set"]
+	var sub := UI.label("Set %d" % (s + 1), 32, UI.GOLD)
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(sub)
+	for m in Progress.missions["list"]:
+		v.add_child(_mission_card(m, s))
+	var bonus := UI.chip([UI.label("All three:", 28, Color.WHITE, 600), UI.icon("coin", 32, UI.GOLD), UI.label("+%d" % Missions.set_bonus(s), 28, UI.GOLD)], "chip", Vector2(0, 64))
+	v.add_child(bonus)
+	var close := UI.button("DONE", "green", 40, "check", 100)
+	close.pressed.connect(func():
+		_clear(_overlay)
+		show_tab(_tab))
+	v.add_child(close)
+	_place(panel, _overlay, 44, 150, 44)
+
+
+## One mission: icon, text, progress bar and count, reward (or a check when done).
+func _mission_card(m: Dictionary, s: int) -> Control:
+	var card := UI.panel("chip", 14)
+	var h := _hbox(16)
+	card.add_child(h)
+	h.add_child(UI.icon("check" if m["done"] else Missions.icon(m), 48, Color("5fd36a") if m["done"] else Color.WHITE))
+	var col := _vbox(8)
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var t := UI.label(Missions.text(m), 28, Color.WHITE, 600)
+	t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(t)
+	var bar_row := _hbox(12)
+	var bar := UI.seg_bar(10, Vector2(16, 18), 3)
+	bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var v := Missions.value(m, {})
+	UI.set_bar(bar, float(v) / m["target"], Color("5fd36a") if m["done"] else UI.GOLD)
+	bar_row.add_child(bar)
+	bar_row.add_child(UI.label("%d/%d" % [v, m["target"]], 24, Color.WHITE, 600))
+	col.add_child(bar_row)
+	h.add_child(col)
+	var rw := _vbox(2)
+	rw.add_child(UI.chip([UI.icon("coin", 24, UI.GOLD), UI.label("+%d" % Missions.reward_coins(s), 24, UI.GOLD)], "chip", Vector2(0, 0)))
+	var xp := UI.label("+%d XP" % Missions.reward_xp(s), 22, Color("c9a0ff"), 600)
+	xp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	rw.add_child(xp)
+	if m["done"]:
+		rw.modulate.a = 0.45
+	h.add_child(rw)
+	return card
+
+
 func _toggle(text: String, on: bool, set_fn: Callable) -> Control:
 	var row := _hbox(12)
 	var l := UI.label(text, 36)
@@ -905,6 +974,27 @@ func show_over(data: Variant, title := "") -> void:
 		h.add_child(UI.label(str(r[1]), 32, Color.WHITE, 600))
 		rv.add_child(h)
 	v.add_child(rows)
+	var ms: Dictionary = data.get("missions", {})
+	if not ms.is_empty():
+		var mp := UI.panel("chip", 12)
+		var mv := _vbox(6)
+		mp.add_child(mv)
+		for m in ms["list"]:
+			var fresh: bool = m["id"] in ms["new"]
+			var mh := _hbox(10)
+			mh.add_child(UI.icon("check" if m["done"] else Missions.icon(m), 24, Color("5fd36a") if m["done"] else Color(1, 1, 1, 0.7)))
+			var ml := UI.label(Missions.text(m), 24, UI.GOLD if fresh else Color.WHITE, 600)
+			ml.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			ml.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			mh.add_child(ml)
+			mh.add_child(UI.label("DONE!" if fresh else "%d/%d" % [m["prog"], m["target"]], 24, UI.GOLD if fresh else Color.WHITE, 600))
+			mv.add_child(mh)
+		if ms["coins"] > 0:
+			var rl := UI.label(("SET COMPLETE! " if ms["set_done"] else "") + "Missions: +%d coins, +%d XP" % [ms["coins"], ms["xp"]], 26, UI.GOLD)
+			rl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			rl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			mv.add_child(rl)
+		v.add_child(mp)
 	if data.has("xp_text"):
 		var xh := _hbox()
 		var xl := UI.label(data["xp_text"], 28)
