@@ -130,9 +130,6 @@ func _ready() -> void:
 	reset()
 	hud.show_menu(best)
 	var args := OS.get_cmdline_user_args()
-	if "blocks" in args or "heroes" in args:      # tests and shots: pick the look
-		Config.hero_models = "heroes" in args
-		_make_character()
 	if "--reel" in args:
 		# Animation reel: --reel <dir> [close|game] [idle] [char=X] -> PNG frames at 30 fps
 		var i := args.find("--reel")
@@ -170,15 +167,12 @@ func _ready() -> void:
 		Progress.tutorial_done = not ("trial" in args)   # tests skip the trial unless asked for
 
 
-## The hero model or the block figure (menu setting). Both have the same interface.
+## The block figure (the game's look).
 func _make_character() -> void:
-	var want_hero := Config.hero_models
 	if character and is_instance_valid(character):
-		if (character is HeroCharacter) == want_hero:
-			character.build(Config.char_def())
-			return
-		character.queue_free()
-	character = HeroCharacter.new() if want_hero else BlockCharacter.new()
+		character.build(Config.char_def())
+		return
+	character = BlockCharacter.new()
 	add_child(character)
 
 
@@ -697,6 +691,7 @@ func _smash(it: Item) -> void:
 	_burst(it, Config.KIND[it.kind]["color"])
 	shake = maxf(shake, 0.25)
 	sfx.play("smash")
+	_buzz(30)
 	smashes += 1
 	var b: int = (Config.SMASH_POINTS + st["smash_pts"]) * _mult() * _combo_mult()
 	pts += b

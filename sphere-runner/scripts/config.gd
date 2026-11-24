@@ -116,19 +116,19 @@ const CHARS := {
 		"ability": "focus", "ability_time": 3.0, "ability_max": 3.0, "smash_extend": 0.0, "label": "FOCUS",
 		"body": Color("3380ff"), "limb": Color("2559c4"), "accent": Color("f0f0f5"), "visor": Color("29d4ff"),
 		"shape": {"torso_w": 1.0, "shoulder": 1.0, "arm_t": 1.0, "hand": 1.0, "leg_len": 1.0, "leg_t": 1.0, "head": 1.0},
-		"model": "Ranger", "model_scale": 1.0, "gear": "headband"},
+		"gear": "headband"},
 	"smasher": {"name": "Smasher", "desc": "Heavy. Strength: meter fills 40% faster. Weakness: lower jump. Ability: Smash through blocks for 3 s; each block smashed adds 0.4 s, up to 5 s.",
 		"lane_mul": 1.0, "jump_v": 12.5, "float_time": 0.3, "combo_time": 2.5, "meter_mul": 1.4,
 		"ability": "smash", "ability_time": 3.0, "ability_max": 5.0, "smash_extend": 0.4, "label": "SMASH", "heavy": true,
 		"body": Color("3a4658"), "limb": Color("2a3342"), "accent": Color("ffb020"), "visor": Color("ffb020"),
 		"shape": {"torso_w": 1.3, "shoulder": 1.25, "arm_t": 1.45, "hand": 1.7, "leg_len": 0.88, "leg_t": 1.35, "head": 0.95},
-		"model": "Barbarian", "model_scale": 1.12, "gear": "horns"},
+		"gear": "horns"},
 	"jumper": {"name": "Jumper", "desc": "Light. Strength: jumps higher (about 3 m) and floats longer. Weakness: more time in the air. Ability: Super jump, a huge leap over anything.",
 		"lane_mul": 1.0, "jump_v": 16.5, "float_time": 0.8, "combo_time": 2.5, "meter_mul": 1.0,
 		"ability": "super", "ability_time": 0.0, "ability_max": 0.0, "smash_extend": 0.0, "label": "SUPER JUMP",
 		"body": Color("22b357"), "limb": Color("15803d"), "accent": Color("eafff0"), "visor": Color("b6ff3d"),
 		"shape": {"torso_w": 0.85, "shoulder": 0.9, "arm_t": 0.85, "hand": 1.0, "leg_len": 1.18, "leg_t": 0.85, "head": 1.0},
-		"model": "Rogue", "model_scale": 0.97, "gear": "antenna"},
+		"gear": "antenna"},
 }
 
 # --- Planets ----------------------------------------------------------
@@ -146,7 +146,7 @@ const THEMES := [
 		"props": {"f_tree1": 3, "f_tree1b": 2, "f_tree2": 4, "f_tree2e": 2, "f_tree3": 2, "f_pine": 4, "f_bush": 4, "f_bush3": 3,
 			"f_rock": 2, "f_rock2": 2, "f_grass": 7, "house": 2}, "flag": "green",
 		"laps_to_boss": 2, "boss_loops": 3,
-		"boss": {"name": "MINOTAUR", "block": "stone", "model": "minotaur", "model_h": 21.0, "body": Color("8a8f7a"), "eye": Color("ffe14d"), "wave": Color("a8ff6a"), "glow": 0.0,
+		"boss": {"name": "MINOTAUR", "block": "stone", "body": Color("8a8f7a"), "eye": Color("ffe14d"), "wave": Color("a8ff6a"), "glow": 0.0,
 			"throws": {"smash": 45, "block": 0, "sweep_low": 25, "sweep_high": 20, "stomp": 10}, "combo": 0.0, "rate": 0.75,
 			"archetype": "gate_walker", "signature": {"vine_sweep": 25}}},
 	{"name": "DUNES", "radius": 36.0, "sky_top": Color("f0a05a"), "sky_bottom": Color("fbe3b8"),
@@ -155,7 +155,7 @@ const THEMES := [
 		"props": {"cactus": 5, "pyramid": 1, "palm": 3, "f_acacia": 2, "f_sandrock": 3, "f_sandrock2": 3, "f_drygrass": 5, "dune": 4},
 		"flag": "yellow",
 		"laps_to_boss": 2, "boss_loops": 4,
-		"boss": {"name": "SAND WYVERN", "block": "sand_A", "model": "wyvern", "model_h": 13.0, "hover": 9.0, "tint": Color("9a5a32"), "body": Color("c9a060"), "eye": Color("3fe0ff"), "wave": Color("ffd27a"), "glow": 0.0,
+		"boss": {"name": "SAND WYVERN", "block": "sand_A", "body": Color("c9a060"), "eye": Color("3fe0ff"), "wave": Color("ffd27a"), "glow": 0.0,
 			"throws": {"smash": 38, "block": 10, "sweep_low": 20, "sweep_high": 20, "stomp": 12}, "combo": 0.12, "rate": 0.85,
 			"archetype": "flyer", "signature": {"rolling_boulder": 25, "meteor_shower": 18}}},
 	{"name": "GLACIER", "radius": 54.0, "sky_top": Color("6f9fd8"), "sky_bottom": Color("e6f2fb"),
@@ -164,7 +164,7 @@ const THEMES := [
 		"props": {"spike": 3, "snowpine": 4, "f_frostpine": 4, "igloo": 1, "f_icerock": 3, "f_snowrock": 3, "snowman": 1},
 		"flag": "blue",
 		"laps_to_boss": 3, "boss_loops": 4,
-		"boss": {"name": "ICE TITAN", "block": "snow", "model": "ice_golem", "model_h": 20.0, "tint": Color("5fa8dc"), "body": Color("bfe3ff"), "eye": Color("29a0ff"), "wave": Color("9fe8ff"), "glow": 0.15,
+		"boss": {"name": "ICE TITAN", "block": "snow", "body": Color("bfe3ff"), "eye": Color("29a0ff"), "wave": Color("9fe8ff"), "glow": 0.15,
 			"throws": {"smash": 32, "block": 20, "sweep_low": 16, "sweep_high": 16, "stomp": 16}, "combo": 0.25, "rate": 0.95,
 			"archetype": "roller", "signature": {"ice_lane": 20, "quake_rhythm": 15, "decoy": 15}}},
 	{"name": "EMBER", "radius": 30.0, "sky_top": Color("1a1024"), "sky_bottom": Color("5a2a3a"),
@@ -173,7 +173,7 @@ const THEMES := [
 		"props": {"volcano": 2, "shard": 4, "f_bare": 3, "f_bare2": 3, "lava": 3, "f_ashrock": 3, "f_ashrock2": 2},
 		"flag": "red",
 		"laps_to_boss": 3, "boss_loops": 5,
-		"boss": {"name": "MAGMA WYRM", "block": "lava", "model": "lava_monster", "model_h": 21.0, "body": Color("3a2a2a"), "eye": Color("ffc400"), "wave": Color("ff7a2a"), "glow": 0.8,
+		"boss": {"name": "MAGMA WYRM", "block": "lava", "body": Color("3a2a2a"), "eye": Color("ffc400"), "wave": Color("ff7a2a"), "glow": 0.8,
 			"throws": {"smash": 30, "block": 22, "sweep_low": 15, "sweep_high": 15, "stomp": 18}, "combo": 0.35, "rate": 1.05,
 			"archetype": "burrower", "signature": {"lava_trail": 22, "quake_rhythm": 14, "decoy": 16, "gate_slam": 1}}},
 ]
@@ -183,10 +183,9 @@ var difficulty := "medium"
 var character := "runner"
 var sound := true
 const PIXEL_SCALE := 3       # pixel world: one world pixel = 3 x 3 screen pixels (at 720 x 1280)
-var pixel_world := true     # the 3D world drawn at a third of the resolution, scaled up crisp
+const pixel_world := true   # the 3D world drawn at a third of the resolution, scaled up crisp
 var vibration := true
 var music := true
-var hero_models := false    # 3D models for heroes and bosses (true) or the block figures (false, the game's style)
 
 
 # --- Boss forge: endless bosses after the fourth planet --------------------------------
@@ -214,7 +213,6 @@ func forge_boss(i: int, cycle: int, seed_extra := 0, force_arch := "") -> Dictio
 	var nouns: Array = FORGE_NOUN[a]
 	b["name"] = "%s %s" % [FORGE_PREFIX[i][rng.randi() % 4], nouns[rng.randi() % nouns.size()]]
 	b["archetype"] = a
-	b.erase("model")                       # 3D models are for the hand-made bosses
 	var pool: Array = FORGE_POOL[i] + ["decoy", "quake_rhythm"]
 	if a == "flyer":
 		pool.erase("gate_slam")

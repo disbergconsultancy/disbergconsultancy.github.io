@@ -25,13 +25,10 @@ Everything is built in code (no editor scenes besides `scenes/main.tscn`), so it
 | `scripts/ui_kit.gd` | Block-pixel UI kit: Pixelify Sans, block buttons and panels (9-patch textures), 8x8 pixel icons, segmented bars |
 | `assets/ui/` | UI textures generated from the agreed designs (buttons, panels, tiles, icons, hero portraits) |
 | `assets/fonts/` | Pixelify Sans (SIL Open Font License 1.1) |
-| `scripts/hero.gd` | Hero models (KayKit, CC0): Runner = Ranger, Smasher = Barbarian, Jumper = Rogue. Animation clips (run, jump, land, lane dodge, slide, death, upper-body cheer and flinch) in an AnimationTree, with the block figure's toon layer on top. Menu setting "Hero models" switches between heroes and block figures |
-| `assets/kaykit/` | KayKit Adventurers characters and Character Animations (Rig_Medium), by Kay Lousberg (www.kaylousberg.com), CC0 |
 | `scripts/kit.gd` | Shared look: soft (bevelled) blocks used for every block in the game, and loading, fitting and tinting KayKit models |
 | `assets/kit/` | KayKit Forest Nature, Platformer and Block Bits pieces (CC0, Kay Lousberg): scenery, cones and flags, jump barriers, red wall blocks, ramps and platforms, power-up models, textured boss blocks |
-| `assets/bosses/` | Boss models (Tripo, supplied by the project owner; see its README for the licence note), simplified for mobile: Minotaur, Sand Wyvern, Ice Titan (ice golem), Magma Giant (lava monster). Animated in code in `boss.gd` |
 | `scripts/swipe_input.gd` | Swipes (vertical-friendly zones), taps, double-taps, hold |
-| `scripts/hud.gd` | HUD, ability meter, power-up list, boss bar, menu (heroes, skills, shop), settings (music, sound effects, vibration, pixel world, difficulty, boss test), skill tree, core shop, crash screen |
+| `scripts/hud.gd` | HUD, ability meter, power-up list, boss bar, menu (heroes, skills, shop), settings (music, sound effects, vibration, difficulty, boss test), skill tree, core shop, crash screen |
 | `scripts/sfx.gd` | Sound effects (Kenney files where present, footsteps per world; otherwise 8-bit effects synthesized at startup (square with duty, triangle, saw, pitched noise) and the music player (looping tracks with a cross-fade) |
 | `assets/audio/sfx/` | Sound effects from Kenney's CC0 packs (Digital Audio, Impact Sounds, Interface Sounds, Music Jingles; kenney.nl), picked and levelled by `tools/pick_sfx.py`. Effects without a file stay synthesized (coin, slide, swish, dash) |
 | `assets/audio/music/` | Chiptune loops per world plus menu and boss, made by `tools/gen_music.py` (numpy + ffmpeg): `python3 tools/gen_music.py [names]` |

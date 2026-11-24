@@ -802,10 +802,6 @@ func show_settings(paused: bool) -> void:
 	bv.add_child(_toggle("Music", Config.music, func(on): Config.music = on))
 	bv.add_child(_toggle("Sound effects", Config.sound, func(on): Config.sound = on))
 	bv.add_child(_toggle("Vibration", Config.vibration, func(on): Config.vibration = on))
-	bv.add_child(_toggle("Pixel world", Config.pixel_world, func(on): Config.pixel_world = on))
-	bv.add_child(_toggle("3D models", Config.hero_models, func(on):
-		Config.hero_models = on
-		character_changed.emit()))
 	bv.add_child(UI.label("Difficulty", 36))
 	var drow := _hbox(10)
 	for dd in ["easy", "medium", "hard"]:

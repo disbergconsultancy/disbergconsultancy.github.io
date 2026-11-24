@@ -428,7 +428,7 @@ func _details(dt: float, state: String, s: Dictionary) -> void:
 	j["gear"].rotation.x = gear_angle
 
 
-# --- Shared toon layer (also used by HeroCharacter) ---------------------------------
+# --- Toon layer ---------------------------------------------------------
 
 ## Timers, squash and stretch, dust and the air-jump flip. Returns the extra flip angle.
 func _tick(dt: float, state: String, s: Dictionary) -> float:
