@@ -94,6 +94,33 @@ func _place(c: Control, parent: Control, left: float, top: float, right := -1.0,
 	return c
 
 
+## Like _place, but y is measured from a fraction of the screen height (0 top, 0.5 middle,
+## 1 bottom), so the layout fits taller phones: bottom bars stay at the bottom.
+## right < 0: as wide as its content, at `left` (or, with from_right, `left` from the right edge).
+func _anchor(c: Control, parent: Control, left: float, y: float, right: float, frac: float, from_right := false) -> Control:
+	parent.add_child(c)
+	c.anchor_top = frac
+	c.anchor_bottom = frac
+	c.offset_top = y
+	c.offset_bottom = y
+	if right >= 0.0:
+		c.anchor_left = 0.0
+		c.anchor_right = 1.0
+		c.offset_left = left
+		c.offset_right = -right
+	elif from_right:
+		c.anchor_left = 1.0
+		c.anchor_right = 1.0
+		c.offset_left = -left - c.custom_minimum_size.x
+		c.offset_right = -left
+	else:
+		c.anchor_left = 0.0
+		c.anchor_right = 0.0
+		c.offset_left = left
+		c.offset_right = left
+	return c
+
+
 func _vbox(sep := 14) -> VBoxContainer:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", sep)
@@ -184,14 +211,14 @@ func _build_run() -> void:
 	# Flash and pop messages
 	_flash = UI.label("", 84, Color.WHITE, 700, true)
 	_flash.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_place(_flash, _run, 0, 470, 0)
+	_anchor(_flash, _run, 0, -170, 0, 0.5)
 	_pop = UI.label("", 52, UI.GOLD, 700, true)
 	_pop.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_place(_pop, _run, 0, 660, 0)
+	_anchor(_pop, _run, 0, 20, 0, 0.5)
 	# Power-ups, bottom left (above the meter)
 	_powers_row = _hbox(10)
 	_powers_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_place(_powers_row, _run, M, 1050)
+	_anchor(_powers_row, _run, M, -230, -1, 1.0)
 	powers_label = Label.new()      # unused placeholder for old callers
 	# Ability meter and pause, bottom
 	_meter_box = UI.panel("panel", 10)
@@ -208,12 +235,12 @@ func _build_run() -> void:
 	mb.add_child(mrow)
 	_meter_bar = UI.seg_bar(12, Vector2(30, 26), 4)
 	mb.add_child(_meter_bar)
-	_place(_meter_box, _run, M, 1132, 156)
+	_anchor(_meter_box, _run, M, -148, 156, 1.0)
 	_pause_btn = UI.button("", "stone", 30, "pause", 136)
 	_pause_btn.custom_minimum_size = Vector2(112, 136)
 	_pause_btn.add_theme_constant_override("icon_max_width", 52)
 	_pause_btn.pressed.connect(func(): pause_pressed.emit())
-	_place(_pause_btn, _run, 720 - M - 112, 1132)
+	_anchor(_pause_btn, _run, M, -148, -1, 1.0, true)
 
 
 func set_info(coins_: int, where: String, kmh: int) -> void:
@@ -283,8 +310,8 @@ func _build_menu() -> void:
 	# Tab bar
 	var bar := _hbox(14)
 	bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	_place(bar, _menu, 18, 1104, 18)
-	bar.size.y = 160
+	_anchor(bar, _menu, 18, -176, 18, 1.0)
+	bar.offset_bottom = -16
 	for t in [["home", "play", "RUN"], ["heroes", "hero", "HEROES"], ["skills", "star", "SKILLS"], ["shop", "coin", "SHOP"]]:
 		var b := UI.button(t[2], "stone", 30, t[1], 140)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -373,13 +400,13 @@ func _render_home() -> void:
 	var ab := UI.label(_ability_line(c), 30, Color.WHITE, 600)
 	ab.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	mid.add_child(ab)
-	_place(mid, p, 0, 540, 0)
+	_anchor(mid, p, 0, -100, 0, 0.5)
 	for side in [-1, 1]:
 		var arrow := UI.button("", "stone", 30, "left" if side < 0 else "right", 118)
 		arrow.custom_minimum_size = Vector2(96, 118)
 		arrow.add_theme_constant_override("icon_max_width", 48)
 		arrow.pressed.connect(_cycle_hero.bind(side))
-		_place(arrow, p, 40 if side < 0 else 720 - 40 - 96, 690)
+		_anchor(arrow, p, 40, 50, -1, 0.5, side > 0)
 	# Play and the best score / planet
 	var col := _vbox(16)
 	var play := UI.button("PLAY", "green", 84, "play", 168)
@@ -390,7 +417,7 @@ func _render_home() -> void:
 	chips.add_child(UI.chip([UI.icon("star", 32, UI.GOLD), UI.label("Best %d" % _best, 30)]))
 	chips.add_child(UI.chip([UI.label(Config.THEME["name"].capitalize(), 30)], "chip"))
 	col.add_child(chips)
-	_place(col, p, 44, 852, 44)
+	_anchor(col, p, 44, -428, 44, 1.0)
 
 
 func _ability_line(c: String) -> String:
