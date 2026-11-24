@@ -201,35 +201,34 @@ func _build_run() -> void:
 	schip.size_flags_horizontal = Control.SIZE_SHRINK_END
 	tr.add_child(schip)
 	info_label = Label.new()        # unused placeholder for old callers
-	# Boss bar
-	_boss_box = UI.panel("panel", 10)
+	# Boss strip: one slim line at the bottom, above the meter (keeps the view ahead clear)
+	_boss_box = UI.panel("chip", 4)
+	_boss_box.custom_minimum_size.y = 68
 	_boss_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var bb := _vbox(8)
-	bb.alignment = BoxContainer.ALIGNMENT_CENTER
-	_boss_box.add_child(bb)
-	var bn := _hbox(10)
+	var bn := _hbox(12)
 	bn.alignment = BoxContainer.ALIGNMENT_CENTER
-	bn.add_child(UI.icon("skull", 40, Color("ff6b5e")))
-	_boss_name = UI.label("", 36)
+	_boss_box.add_child(bn)
+	bn.add_child(UI.icon("skull", 32, Color("ff6b5e")))
+	_boss_name = UI.label("", 26)
 	bn.add_child(_boss_name)
-	bb.add_child(bn)
-	_boss_bar = UI.seg_bar(20, Vector2(18, 24), 4)
-	bb.add_child(_boss_bar)
-	_boss_sub = UI.label("", 26, Color.WHITE, 600)
-	_boss_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	bb.add_child(_boss_sub)
-	_place(_boss_box, _run, 92, 236, 92)
+	_boss_bar = UI.seg_bar(16, Vector2(10, 18), 3)
+	_boss_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_boss_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bn.add_child(_boss_bar)
+	_boss_sub = UI.label("", 24, Color.WHITE, 600)
+	bn.add_child(_boss_sub)
+	_anchor(_boss_box, _run, M, -230, M, 1.0)
 	# Flash and pop messages
 	_flash = UI.label("", 84, Color.WHITE, 700, true)
 	_flash.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_anchor(_flash, _run, 0, -170, 0, 0.5)
+	_anchor(_flash, _run, 0, -380, 0, 0.5)     # in the sky, above what is coming
 	_pop = UI.label("", 52, UI.GOLD, 700, true)
 	_pop.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_anchor(_pop, _run, 0, 20, 0, 0.5)
+	_anchor(_pop, _run, 0, -230, 0, 0.5)
 	# Power-ups, bottom left (above the meter)
 	_powers_row = _hbox(10)
 	_powers_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_anchor(_powers_row, _run, M, -226, -1, 1.0)
+	_anchor(_powers_row, _run, M, -308, -1, 1.0)
 	powers_label = Label.new()      # unused placeholder for old callers
 	# Ability meter and pause, bottom
 	_meter_box = UI.panel("panel", 10)
@@ -258,6 +257,8 @@ func _build_run() -> void:
 ## Trial world: the world is frozen and this tip shows the gesture to make.
 func show_tip(icon_name: String, title: String, text: String) -> void:
 	hide_tip()
+	_flash.text = ""              # the tip is the only message while it is up
+	_pop.text = ""
 	_tip = _layer()
 	var dim := ColorRect.new()
 	dim.color = Color(0.06, 0.07, 0.1, 0.35)
@@ -306,7 +307,7 @@ func set_boss(visible_: bool, name := "", progress := 0.0, sub := "") -> void:
 	if visible_:
 		_boss_name.text = name
 		UI.set_bar(_boss_bar, progress, Color("d93333"))
-		_boss_sub.text = sub
+		_boss_sub.text = sub.replace(" to pass it", "").replace("waiting at the end of this lap", "AHEAD")
 
 
 func set_meter(fraction: float, color: Color, text: String, pulse: bool) -> void:
