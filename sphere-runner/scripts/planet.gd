@@ -342,6 +342,43 @@ func _box(size: Vector3, color: Color, glow := 0.0) -> MeshInstance3D:
 	return mi
 
 
+## The floating block (HIGH): a purple-tinted stone block (Block Bits) with a darker base, a white stripe and a
+## glowing underside. Centred on its node; the child "body" bobs (upwards only).
+func _floating_block(w: float, h: float, depth: float, color: Color) -> Node3D:
+	var root := Node3D.new()
+	var body := Node3D.new()
+	body.name = "body"
+	root.add_child(body)
+	var base_h := 0.3
+	var main := Kit.node("blockbits/stone", Vector3(w, h - base_h, depth), color.lightened(0.25))
+	main.position.y = base_h / 2.0
+	body.add_child(main)
+	var base := _box(Vector3(w * 0.92, base_h, depth * 0.92), color.darkened(0.45))
+	base.position.y = -h / 2.0 + base_h / 2.0
+	body.add_child(base)
+	var stripe := _box(Vector3(w + 0.04, 0.1, depth + 0.04), Color.WHITE)
+	stripe.position.y = -h / 2.0 + base_h + 0.12
+	body.add_child(stripe)
+	var glow := _box(Vector3(w * 0.7, 0.05, depth * 0.7), Color("ff7af0"), 2.0)
+	glow.position.y = -h / 2.0 - 0.01
+	body.add_child(glow)
+	return root
+
+
+## A soft dark patch on the road (the floating block's shadow).
+func _shadow(w: float, depth: float) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(w, depth)
+	mi.mesh = pm
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.1, 0.0, 0.15, 0.4)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mi.material_override = m
+	return mi
+
+
 static var _coin_meshes: Array = []
 
 
@@ -451,6 +488,10 @@ func add_item(kind: String, phi: float, x: float, opts := {}) -> Item:
 		"POWER":
 			it.power = opts.get("power", "magnet")
 			it.parts.append({"node": Kit.node(POWER_MODELS[it.power], Vector3(w, h, depth) * 1.25, Color.WHITE, false, true), "dm": 0.0, "y": it.y0 + h / 2.0, "spin": true})
+		"HIGH":
+			# A floating block: slide under it. Its shadow on the road shows where it hangs.
+			it.parts.append({"node": _floating_block(w, h, depth, color), "dm": 0.0, "y": it.y0 + h / 2.0, "bob": true})
+			it.parts.append({"node": _shadow(w * 0.9, depth * 1.1), "dm": 0.0, "y": 0.03})
 		_:
 			it.parts.append({"node": _box(Vector3(w, h, depth), color), "dm": 0.0, "y": it.y0 + h / 2.0})
 			_add_details(it, kind, w, h, depth)

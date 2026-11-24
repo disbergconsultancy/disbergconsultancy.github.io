@@ -160,6 +160,8 @@ func _ready() -> void:
 				_test["ability"] = true
 			elif a.begins_with("boss="):     # start a boss test on planet N instead of a normal run
 				_test["boss"] = int(a.substr(5))
+			elif a.begins_with("row="):      # put a row of this kind just ahead for the shot (e.g. row=HIGH)
+				_test["row"] = a.substr(4)
 			elif a.begins_with("move="):     # force this boss move for the shot (e.g. move=rolling_boulder)
 				_test["move"] = a.substr(5)
 			elif a in ["skills", "shop", "over", "heroes", "settings", "pause"]:
@@ -1048,6 +1050,8 @@ func _render(dt: float) -> void:
 		for p in it.parts:
 			if p.get("spin", false):
 				p["node"].rotate_object_local(Vector3.UP, dt * 4.0)
+			elif p.get("bob", false):    # floating blocks drift up a little, never lower
+				p["node"].get_child(0).position.y = 0.07 * (1.0 + sin(Time.get_ticks_msec() * 0.003 + it.phi * 40.0))
 	# Camera follows sideways and rises a little with jumps.
 	cam_x += (px * 0.6 - cam_x) * minf(1.0, dt * 8.0)
 	cam_y += ((py * 1.1 if pw["orbit"] > 0.0 or hop_t > 0.0 else py * 0.6) - cam_y) * minf(1.0, dt * 3.0)
@@ -1554,6 +1558,12 @@ func _autotest_tick() -> void:
 				if _test.has("move") and boss.phase == "fight" and not _test.has("moved"):
 					_test["moved"] = true
 					boss.force_move(_test["move"])
+				if i == n - 45 and _test.has("row"):
+					for it in planet.items:
+						if it.alive and _ahead_m(it) > -2.0 and _ahead_m(it) < 40.0:
+							planet.hide_item(it)
+					for l in [-1, 0, 1]:
+						planet.add_item(_test["row"], angle + 15.0 / planet.radius, Config.lane_x(l))
 				if i == n - 90:
 					if _test.has("power"):
 						activate(_test["power"])
