@@ -1,0 +1,137 @@
+class_name ModelCharacter
+extends BlockCharacter
+## A rigged hero model (Mixamo-style bone names, e.g. a Tripo export) driven by the same
+## poses as the block figure: springs, squash and stretch, takeoff, flip, lane hop, stumble,
+## crash and cheer all come from BlockCharacter. Each pose angle is a rotation about the
+## character's own axes at a joint (forward -Z, left -X, up +Y); it is turned into a bone
+## rotation relative to the model's rest pose. Arms and legs are first straightened to hang
+## down (the block figure's rest pose), so every pose means the same on both.
+
+const BONES := {
+	"spine": ["Spine", "Spine1", "Spine2"], "head": ["Neck", "Head"],
+	"arm_l": ["LeftArm"], "fore_l": ["LeftForeArm"], "arm_r": ["RightArm"], "fore_r": ["RightForeArm"],
+	"thigh_l": ["LeftUpLeg"], "shin_l": ["LeftLeg"], "thigh_r": ["RightUpLeg"], "shin_r": ["RightLeg"]}
+const SPLIT := {"Spine": 0.34, "Spine1": 0.33, "Spine2": 0.33, "Neck": 0.4, "Head": 0.6}
+const STRAIGHTEN := ["LeftArm", "LeftForeArm", "RightArm", "RightForeArm", "LeftUpLeg", "LeftLeg", "RightUpLeg", "RightLeg"]
+
+var model: Node3D
+var skel: Skeleton3D
+var _m := Basis()                 # skeleton space -> character space (rotation only)
+var _rest := {}                   # bone index -> rest global basis (skeleton space)
+var _fix := {}                    # bone name -> straightening rotation (character space)
+var _idx := {}                    # bone name -> index
+var _overlay := StandardMaterial3D.new()
+
+
+func build(d: Dictionary) -> void:
+	def = d
+	for c in pivot.get_children():
+		c.queue_free()
+	j.clear()
+	eyes.clear()
+	model = (load(d["model"]) as PackedScene).instantiate()
+	pivot.add_child(model)
+	skel = model.find_children("*", "Skeleton3D", true, false)[0]
+	for i in skel.get_bone_count():
+		_idx[_short(skel.get_bone_name(i))] = i
+		_rest[i] = skel.get_bone_global_rest(i).basis.orthonormalized()
+	# skeleton -> model root transform (the scene's own nodes in between)
+	var t := Transform3D()
+	var n: Node = skel
+	while n != model:
+		t = (n as Node3D).transform * t
+		n = n.get_parent()
+	var gpos := func(b: String) -> Vector3: return t * skel.get_bone_global_rest(_idx[b]).origin
+	# turn the model so its left (left leg minus right leg) is -X: it then faces -Z like the game
+	var l: Vector3 = gpos.call("LeftUpLeg") - gpos.call("RightUpLeg")
+	var yaw := atan2(l.z, l.x) - PI
+	var turn := Basis(Vector3.UP, -yaw)
+	# height: the top of the head bone (plus the hood) scaled to model_h
+	for mi in model.find_children("*", "MeshInstance3D", true, false):
+		var m3 := mi as MeshInstance3D
+		m3.material_overlay = _overlay
+		for si in m3.mesh.get_surface_count():   # readable on the road: a little self-light and a rim
+			var src := m3.mesh.surface_get_material(si)
+			if src is StandardMaterial3D:
+				var m: StandardMaterial3D = src.duplicate()
+				m.emission_enabled = true
+				m.emission_texture = m.albedo_texture
+				m.emission = Color.WHITE
+				m.emission_energy_multiplier = d.get("model_glow", 0.18)
+				m.rim_enabled = true
+				m.rim = 0.25
+				m.rim_tint = 0.6
+				m.roughness = 0.9
+				m.metallic = 0.0
+				m3.set_surface_override_material(si, m)
+	var top: Vector3 = gpos.call("HeadTop_End") if _idx.has("HeadTop_End") else gpos.call("Head")
+	var k: float = d.get("model_h", 1.5) / maxf(0.05, top.y * 1.04)
+	var hips: Vector3 = turn * (gpos.call("Hips") * k)
+	model.transform = Transform3D(turn.scaled(Vector3(k, k, k)), -hips)
+	hip_y = hips.y
+	_m = (turn * t.basis).orthonormalized()
+	# straighten arms and legs to hang down, parent first (each fix carries to its children)
+	var acc := {}
+	for name in STRAIGHTEN:
+		var i: int = _idx[name]
+		var child := _first_child(i)
+		if child < 0:
+			continue
+		var dir: Vector3 = _m * (skel.get_bone_global_rest(child).origin - skel.get_bone_global_rest(i).origin)
+		var parent_fix: Basis = acc.get(_short(skel.get_bone_name(skel.get_bone_parent(i))), Basis())
+		dir = (parent_fix * dir).normalized()
+		var f := Basis(Quaternion(dir, Vector3.DOWN)) if dir.length() > 0.0 else Basis()
+		_fix[name] = f
+		acc[name] = parent_fix * f
+	_overlay.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_overlay.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_overlay.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_overlay.albedo_color = Color(0, 0, 0, 0)
+	set_dead(false)
+
+
+## "mixamorig:LeftArm" / "mixamorig_LeftArm" (Godot renames ':' on import) -> "LeftArm"
+static func _short(bone: String) -> String:
+	return bone.replace("mixamorig:", "").replace("mixamorig_", "")
+
+
+func _first_child(i: int) -> int:
+	for c in skel.get_bone_children(i):
+		var nm := skel.get_bone_name(c)
+		if not ("Index" in nm or "Middle" in nm or "Ring" in nm or "Pinky" in nm or "Thumb" in nm):
+			return c
+	return -1
+
+
+func _apply_joints() -> void:
+	if skel == null:
+		return
+	var rot := {
+		"spine": Vector3(pose["spine"], pose["spine_y"], 0), "head": Vector3(pose["head"], pose["head_y"], 0),
+		"arm_l": Vector3(pose["arm_lx"], 0, pose["arm_lz"]), "arm_r": Vector3(pose["arm_rx"], 0, pose["arm_rz"]),
+		"fore_l": Vector3(pose["fore_l"], 0, 0), "fore_r": Vector3(pose["fore_r"], 0, 0),
+		"thigh_l": Vector3(pose["thigh_lx"], 0, pose["thigh_lz"]), "thigh_r": Vector3(pose["thigh_rx"], 0, pose["thigh_rz"]),
+		"shin_l": Vector3(pose["shin_l"], 0, 0), "shin_r": Vector3(pose["shin_r"], 0, 0)}
+	var mi := _m.inverse()
+	for key in BONES:
+		for name in BONES[key]:
+			if not _idx.has(name):
+				continue
+			var i: int = _idx[name]
+			var r: Basis = Basis.from_euler(rot[key] * SPLIT.get(name, 1.0)) * _fix.get(name, Basis())
+			var p := skel.get_bone_parent(i)
+			var parent_rest: Basis = _rest[p] if p >= 0 else Basis()
+			var local: Basis = parent_rest.inverse() * (mi * r * _m) * _rest[i]
+			skel.set_bone_pose_rotation(i, local.get_rotation_quaternion())
+
+
+func set_dead(dead: bool) -> void:
+	_overlay.albedo_color = Color(1, 0.1, 0.1, 0.45) if dead else Color(0, 0, 0, 0)
+
+
+func set_glow(on: bool) -> void:
+	if not on:
+		if _overlay.albedo_color.r < 0.9:
+			_overlay.albedo_color = Color(0, 0, 0, 0)
+		return
+	_overlay.albedo_color = Color(0.2, 0.45, 1.0, 0.25 + 0.15 * sin(Time.get_ticks_msec() / 60.0))

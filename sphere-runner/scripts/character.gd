@@ -393,6 +393,12 @@ func update_pose(dt: float, state: String, s: Dictionary) -> void:
 		_lane_layer(target, grounded and s["slide"] <= 0.0, 1.0)
 	_springs(target, KEYS, dt, state == "hit" or state == "over")
 	_apply_pivot(s, flip)
+	_apply_joints()
+	_details(dt, state, s)
+
+
+## Puts the current pose on the joints (a model hero puts it on its skeleton instead).
+func _apply_joints() -> void:
 	j["spine"].rotation = Vector3(pose["spine"], pose["spine_y"], 0)
 	j["head"].rotation = Vector3(pose["head"], pose["head_y"], 0)
 	j["arm_l"].rotation = Vector3(pose["arm_lx"], 0, pose["arm_lz"])
@@ -403,7 +409,6 @@ func update_pose(dt: float, state: String, s: Dictionary) -> void:
 	j["thigh_r"].rotation = Vector3(pose["thigh_rx"], 0, pose["thigh_rz"])
 	j["shin_l"].rotation.x = pose["shin_l"]
 	j["shin_r"].rotation.x = pose["shin_r"]
-	_details(dt, state, s)
 
 
 ## Blinking eyes, and the floppy headband tails / antennae (they lag and bounce).

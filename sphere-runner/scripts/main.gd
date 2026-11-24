@@ -145,7 +145,7 @@ func _ready() -> void:
 				_test["cam"] = "game"
 			elif a.begins_with("char="):
 				Config.character = a.substr(5)
-				character.build(Config.char_def())
+				_make_character()
 	elif "--autotest" in args:
 		_test = {"phase": "god", "kinds": {}, "frames": 0}
 	elif "--runstats" in args:      # how long runs last and what they earn, played by human-like bots
@@ -157,7 +157,7 @@ func _ready() -> void:
 		for a in args:   # optional: char=<runner|smasher|jumper>  power=<magnet|shield|orbit|x2>  ability
 			if a.begins_with("char="):
 				Config.character = a.substr(5)
-				character.build(Config.char_def())
+				_make_character()
 			elif a.begins_with("power="):
 				_test["power"] = a.substr(6)
 			elif a == "ability":
@@ -174,12 +174,21 @@ func _ready() -> void:
 		Progress.tutorial_done = not ("trial" in args)   # tests skip the trial unless asked for
 
 
-## The block figure (the game's look).
+## The hero: a model (a rigged hero from assets/heroes) when the character has one,
+## otherwise the block figure. Both take the same poses.
 func _make_character() -> void:
+	var want_model: bool = Config.char_def().has("model")
 	if character and is_instance_valid(character):
-		character.build(Config.char_def())
+		if (character is ModelCharacter) == want_model:
+			character.build(Config.char_def())
+			return
+		var keep := character.transform
+		character.queue_free()
+		character = ModelCharacter.new() if want_model else BlockCharacter.new()
+		add_child(character)
+		character.transform = keep
 		return
-	character = BlockCharacter.new()
+	character = ModelCharacter.new() if want_model else BlockCharacter.new()
 	add_child(character)
 
 
