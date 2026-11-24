@@ -1,0 +1,5 @@
+# Pixelify Sans
+
+Copyright 2021 The Pixelify Sans Project Authors (https://github.com/eifetx/Pixelify-Sans).
+Licensed under the SIL Open Font License, Version 1.1 (https://openfontlicense.org).
+Static weights 400, 600 and 700 as served by Google Fonts.

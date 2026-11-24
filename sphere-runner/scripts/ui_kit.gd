@@ -1,0 +1,163 @@
+class_name UI
+extends RefCounted
+## The block-pixel UI kit: Pixelify Sans, block buttons and panels (9-patch textures in
+## assets/ui, made by a script from the agreed designs), 8x8 pixel icons and segmented bars.
+## Layout is in the 720 x 1280 design space; one UI pixel is 6 px.
+
+const INK := Color("1a1c22")
+const U := 6
+const GOLD := Color("ffd34a")
+const HERO_ICONS := {"runner": "hero", "smasher": "hero", "jumper": "hero"}
+
+static var _fonts := {}
+static var _tex := {}
+
+
+static func font(weight := 700) -> Font:
+	if not _fonts.has(weight):
+		var f: FontFile = load("res://assets/fonts/PixelifySans-%d.ttf" % weight)
+		_fonts[weight] = f
+	return _fonts[weight]
+
+
+static func tex(name: String) -> Texture2D:
+	if not _tex.has(name):
+		_tex[name] = load("res://assets/ui/%s.png" % name)
+	return _tex[name]
+
+
+## A block box (9-patch): ink border, bevel, face. Panels with a textured face tile it.
+static func box(name: String, pad := 18.0) -> StyleBoxTexture:
+	var sb := StyleBoxTexture.new()
+	sb.texture = tex(name)
+	sb.set_texture_margin_all(2 * U)
+	sb.set_content_margin_all(2 * U + pad)
+	if name in ["panel_stone", "panel_planks"]:
+		sb.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
+		sb.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_TILE_FIT
+	return sb
+
+
+## Text with a hard pixel shadow (or a thick outline for big titles).
+static func label(text: String, size := 32, color := Color.WHITE, weight := 700, outline := false) -> Label:
+	var l := Label.new()
+	l.text = text
+	var ls := LabelSettings.new()
+	ls.font = font(weight)
+	ls.font_size = size
+	ls.font_color = color
+	ls.shadow_color = INK
+	ls.shadow_size = 0
+	var s := maxi(3, size / 12)
+	ls.shadow_offset = Vector2(s, s)
+	if outline:
+		ls.outline_size = maxi(8, size / 6)
+		ls.outline_color = INK
+		ls.shadow_offset = Vector2(s + 2, s + 2)
+		ls.shadow_size = ls.outline_size
+	l.label_settings = ls
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return l
+
+
+## An 8x8 pixel icon, scaled up without smoothing and tinted.
+static func icon(name: String, size := 40.0, color := Color.WHITE) -> TextureRect:
+	var t := TextureRect.new()
+	t.texture = tex("icon_" + name)
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	t.custom_minimum_size = Vector2(size, size)
+	t.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	t.modulate = color
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return t
+
+
+## A block button. kind: stone | green | gold | red | blue. Text with an ink outline.
+static func button(text: String, kind := "stone", size := 34, icon_name := "", height := 96.0) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(0, height)
+	b.focus_mode = Control.FOCUS_NONE
+	b.add_theme_stylebox_override("normal", box("btn_" + kind, 6))
+	b.add_theme_stylebox_override("hover", box("btn_" + kind, 6))
+	b.add_theme_stylebox_override("pressed", box("btn_%s_down" % kind, 6))
+	b.add_theme_stylebox_override("disabled", box("btn_off", 6))
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	b.add_theme_font_override("font", font(700))
+	b.add_theme_font_size_override("font_size", size)
+	for k in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		b.add_theme_color_override(k, Color.WHITE)
+	b.add_theme_color_override("font_disabled_color", Color("9a9aa0"))
+	b.add_theme_color_override("font_outline_color", INK)
+	b.add_theme_constant_override("outline_size", maxi(6, size / 6))
+	if icon_name != "":
+		b.icon = tex("icon_" + icon_name)
+		b.expand_icon = true
+		b.add_theme_constant_override("icon_max_width", int(size * 1.1))
+		b.add_theme_constant_override("h_separation", 16)
+		b.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	return b
+
+
+## A small dark block holding a row of things (icon + text).
+static func chip(children: Array, kind := "chip") -> PanelContainer:
+	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", box(kind, 4))
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.add_child(row)
+	for c in children:
+		row.add_child(c)
+	return p
+
+
+static func panel(kind := "panel", pad := 18.0) -> PanelContainer:
+	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", box(kind, pad))
+	return p
+
+
+## A segmented bar: `total` cells in an ink frame. Fill it with set_bar().
+static func seg_bar(total: int, cell := Vector2(20, 24), gap := 4) -> PanelContainer:
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", gap)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for i in total:
+		var c := ColorRect.new()
+		c.custom_minimum_size = cell
+		c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bar.add_child(c)
+	set_bar(bar, 0.0, Color.WHITE)
+	var frame := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = INK
+	sb.set_content_margin_all(gap + 2)
+	frame.add_theme_stylebox_override("panel", sb)
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.add_child(bar)
+	frame.set_meta("bar", bar)
+	return frame
+
+
+static func set_bar(frame_or_bar: Control, fraction: float, color: Color) -> void:
+	var bar: HBoxContainer = frame_or_bar.get_meta("bar") if frame_or_bar.has_meta("bar") else frame_or_bar
+	var n := bar.get_child_count()
+	var lit := int(round(clampf(fraction, 0.0, 1.0) * n))
+	for i in n:
+		bar.get_child(i).color = color if i < lit else Color("2b2d36")
+
+
+## A full-screen background of tiled dark rock.
+static func backdrop() -> TextureRect:
+	var t := TextureRect.new()
+	t.texture = tex("tile_dark")
+	t.stretch_mode = TextureRect.STRETCH_TILE
+	t.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	t.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	t.mouse_filter = Control.MOUSE_FILTER_STOP
+	return t

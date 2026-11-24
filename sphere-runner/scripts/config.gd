@@ -182,6 +182,9 @@ var THEME: Dictionary = THEMES[0]    # the current planet
 var difficulty := "medium"
 var character := "runner"
 var sound := true
+const PIXEL_SCALE := 3       # pixel world: one world pixel = 3 x 3 screen pixels (at 720 x 1280)
+var pixel_world := true     # the 3D world drawn at a third of the resolution, scaled up crisp
+var vibration := true
 var hero_models := false    # 3D models for heroes and bosses (true) or the block figures (false, the game's style)
 
 

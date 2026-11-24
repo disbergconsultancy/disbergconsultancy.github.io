@@ -4,6 +4,8 @@ Status of ideas. Built items are listed briefly for context; the rest has design
 The Godot project (`sphere-runner/`) is the main version; the web prototype stays as a quick test bed.
 
 ## Built
+- Block-pixel UI (designs: Sphere Runner UI designs canvas): home with tab bar (Run, Heroes, Skills, Shop),
+  in-run HUD, pause and settings, run over; pixel world (3D at 1/3 resolution, crisp) with a settings toggle.
 - Look polish: soft (bevelled) blocks, hero details (blinking eyes, belt, soles; Runner headband, Smasher horns,
   Jumper antennae), KayKit scenery, roadside cones and flags, model obstacles and power-ups, textured boss blocks.
 - Core run, obstacle patterns, waves, power-ups, three characters with abilities, sound.

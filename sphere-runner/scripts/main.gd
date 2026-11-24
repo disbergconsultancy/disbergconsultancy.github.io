@@ -104,6 +104,9 @@ func _ready() -> void:
 	hud.play_pressed.connect(start_run)
 	hud.again_pressed.connect(func(): start_boss_test(test_run) if test_run >= 0 else start_run())
 	hud.boss_test.connect(start_boss_test)
+	hud.settings_changed.connect(func():
+		Progress.save()
+		_apply_pixel_world())
 	hud.menu_pressed.connect(_to_menu)
 	hud.pause_pressed.connect(_toggle_pause)
 	hud.character_changed.connect(func():
@@ -150,7 +153,7 @@ func _ready() -> void:
 				_test["boss"] = int(a.substr(5))
 			elif a.begins_with("move="):     # force this boss move for the shot (e.g. move=rolling_boulder)
 				_test["move"] = a.substr(5)
-			elif a == "skills" or a == "shop" or a == "over":
+			elif a in ["skills", "shop", "over", "heroes", "settings", "pause"]:
 				_test["screen"] = a
 
 
@@ -206,6 +209,7 @@ func _build_environment() -> void:
 	camera.fov = 62.0
 	camera.far = 300.0
 	add_child(camera)
+	_apply_pixel_world()
 
 
 ## Switch to planet i: rebuild the globe, sky and haze.
@@ -317,10 +321,48 @@ func _to_menu() -> void:
 func _toggle_pause() -> void:
 	if state == "run":
 		state = "paused"
-		hud.flash("PAUSED")
+		hud.show_settings(true)
 	elif state == "paused":
 		state = "run"
-		hud.flash("")
+
+
+func _buzz(ms: int) -> void:
+	if Config.vibration:
+		Input.vibrate_handheld(ms)
+
+
+## Pixel world: the camera renders into a small view (a third of the size) that is scaled
+## up without smoothing, under the UI. Off: the camera renders the full screen as before.
+var _pix_box: SubViewportContainer
+var _pix_vp: SubViewport
+
+
+func _apply_pixel_world() -> void:
+	if Config.pixel_world:
+		if _pix_box == null:
+			var layer := CanvasLayer.new()
+			layer.layer = -1
+			add_child(layer)
+			_pix_box = SubViewportContainer.new()
+			_pix_box.stretch = true
+			_pix_box.stretch_shrink = Config.PIXEL_SCALE
+			_pix_box.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			_pix_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			layer.add_child(_pix_box)
+			_pix_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+			_pix_vp = SubViewport.new()
+			_pix_vp.handle_input_locally = false
+			_pix_box.add_child(_pix_vp)
+		_pix_box.visible = true
+		_pix_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		if camera.get_parent() != _pix_vp:
+			camera.reparent(_pix_vp)
+	elif _pix_box:
+		if camera.get_parent() != self:
+			camera.reparent(self)
+		_pix_box.visible = false
+		_pix_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	camera.current = true
 
 
 func _notification(what: int) -> void:
@@ -360,7 +402,7 @@ func crash(it: Item = null) -> void:
 		shake = 0.45
 		hud.flash("STUMBLE!" + ("\n1 left" if stumbles_left > 0 else ""))
 		sfx.play("smash")
-		Input.vibrate_handheld(40)
+		_buzz(40)
 		return
 	state = "hit"
 	last_hit = it.kind if it else "?"
@@ -369,7 +411,7 @@ func crash(it: Item = null) -> void:
 	shake = 0.5
 	character.set_dead(true)
 	character.event("crash")
-	Input.vibrate_handheld(80)
+	_buzz(80)
 
 
 ## Boss test: start on planet i's final lap, ~160 m before the chase, at mid-run speed.
@@ -440,9 +482,9 @@ func _update_hop(dt: float) -> void:
 func _game_over() -> void:
 	state = "over"
 	if test_run >= 0:
-		hud.show_over("Score %d · Coins %d\n%s" % [score(), coins,
-			"%s DEFEATED" % Config.THEME["boss"]["name"] if boss.kills > 0
-			else ("%d m left to pass it" % int(boss.dist - boss.done) if boss.phase == "fight" else "Chase not reached")], "Boss test (not saved)")
+		hud.show_over({"title": "BOSS TEST", "score": score(), "rows": [["Boss", Config.THEME["boss"]["name"]],
+			["Result", "DEFEATED" if boss.kills > 0 else ("%d m left" % int(boss.dist - boss.done) if boss.phase == "fight" else "Not reached")],
+			["Coins", coins], ["Saved", "No (test)"]]})
 		return
 	var s := score()
 	var is_best := Progress.record_run(int(dist), s)
@@ -455,9 +497,12 @@ func _game_over() -> void:
 	if aw["levels"] > 0:
 		level_line = "\nLEVEL UP! " + ("+%d skill point%s" % [aw["points"], "" if aw["points"] == 1 else "s"] if aw["points"] > 0 else "(next point at the next level)")
 	var xp_line := "Max level" if p["lvl"] >= Progress.MAX_LEVEL else "%d / %d XP" % [p["xp"], Progress.xp_for_next(p["lvl"])]
-	hud.show_over("Score %d%s\nBest %d\nLaps %d · Coins %d\nDistance %d m · Close calls %d\nBosses defeated %d\n\n+%d XP · %s Lv %d (%s)%s\n+%d coins · wallet %d" % [
-		s, "  NEW BEST!" if is_best else "", best, lap, coins, int(dist), close_calls, boss.kills,
-		aw["xp"], Config.CHARS[Config.character]["name"], p["lvl"], xp_line, level_line, coins, Progress.wallet])
+	var need := Progress.xp_for_next(p["lvl"])
+	hud.show_over({"title": "RUN OVER", "score": s, "best": is_best,
+		"rows": [["Distance", "%d m" % int(dist)], ["Coins", "+%d" % coins], ["Close calls", close_calls], ["Bosses", boss.kills]],
+		"xp_text": "+%d XP · %s LV %d  (%s)" % [aw["xp"], Config.CHARS[Config.character]["name"].to_upper(), p["lvl"], xp_line],
+		"xp_frac": 1.0 if p["lvl"] >= Progress.MAX_LEVEL else float(p["xp"]) / need,
+		"level_up": level_line.strip_edges()})
 
 
 func _on_tap() -> void:
@@ -946,7 +991,7 @@ func _render(dt: float) -> void:
 func _update_hud() -> void:
 	hud.score_label.text = str(score())
 	var where: String = "Boss chase" if boss.phase == "fight" or boss.phase == "down" else "Lap %d/%d" % [mini(world_lap + 1, Config.THEME["laps_to_boss"]), Config.THEME["laps_to_boss"]]
-	hud.info_label.text = "Coins %d\n%s\n%d km/h\n%s" % [coins, where, int(speed * 3.6), Config.THEME["name"].capitalize()]
+	hud.set_info(coins, where.to_upper(), int(speed * 3.6))
 	match boss.phase:
 		"intro":
 			hud.set_boss(true, Config.THEME["boss"]["name"], 0.0, "waiting at the end of this lap")
@@ -957,15 +1002,15 @@ func _update_hud() -> void:
 		_:
 			hud.set_boss(false)
 	hud.combo_label.text = "COMBO x%d  (%d)" % [_combo_mult(), combo] if combo >= 3 else ""
-	var list: Array[String] = []
+	var list := []
 	for k in ["magnet", "orbit", "x2"]:
 		if pw[k] > 0.0:
-			list.append("%s %d" % [Config.POWERS[k]["label"], ceili(pw[k])])
+			list.append([{"magnet": "magnet", "orbit": "star", "x2": "coin"}[k], "%d s" % ceili(pw[k]), Config.POWERS[k]["color"]])
 	if pw["shield"] > 0.0:
-		list.append("SHIELD")
+		list.append(["heart", "ON", Config.POWERS["shield"]["color"]])
 	if stumbles_left > 0:
-		list.append("STUMBLE GUARD %d" % stumbles_left)
-	hud.powers_label.text = "\n".join(list)
+		list.append(["heart", "x%d" % stumbles_left, Color("ffb020")])
+	hud.set_powers(list)
 	if _mult() > 1:
 		hud.score_label.text += "  x2"
 	var cd := Config.char_def()
@@ -1419,6 +1464,8 @@ func _autotest_tick() -> void:
 				step(gdt)
 				_update_debris(gdt)
 				_render(dt)
+			if _test.get("screen", "") == "pause":
+				_toggle_pause()
 		else:
 			for i in 30:
 				step(dt)
@@ -1432,6 +1479,10 @@ func _autotest_tick() -> void:
 					Progress.wallet = 650
 					Progress.core = {"luck": 1, "dur": 0, "stumble": 1}
 					hud.open_shop("menu")
+				"heroes":
+					hud.show_tab("heroes")
+				"settings":
+					hud.show_settings(false)
 				"over":
 					start_run()
 					god = false

@@ -75,6 +75,8 @@ func load_save() -> void:
 	Config.difficulty = cfg.get_value("settings", "difficulty", Config.difficulty)
 	Config.sound = cfg.get_value("settings", "sound", Config.sound)
 	Config.hero_models = cfg.get_value("settings", "models_3d", Config.hero_models)
+	Config.pixel_world = cfg.get_value("settings", "pixel_world", Config.pixel_world)
+	Config.vibration = cfg.get_value("settings", "vibration", Config.vibration)
 
 
 func save() -> void:
@@ -89,6 +91,8 @@ func save() -> void:
 	cfg.set_value("settings", "difficulty", Config.difficulty)
 	cfg.set_value("settings", "sound", Config.sound)
 	cfg.set_value("settings", "models_3d", Config.hero_models)
+	cfg.set_value("settings", "pixel_world", Config.pixel_world)
+	cfg.set_value("settings", "vibration", Config.vibration)
 	cfg.save(SAVE_PATH)
 
 
