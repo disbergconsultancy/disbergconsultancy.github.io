@@ -1346,7 +1346,7 @@ func _reel(dt: float) -> void:
 		god = true
 		start_run()
 		speed = 16.0
-	hud.visible = _test["cam"] == "game"
+	hud.visible = _test["cam"] == "game" and not "nohud" in OS.get_cmdline_user_args()
 	var n := int(total * 60.0)
 	var done := {}
 	for f in n:
