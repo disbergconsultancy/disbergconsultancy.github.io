@@ -228,4 +228,6 @@ func set_glow(on: bool) -> void:
 		if _overlay.albedo_color.r < 0.9:
 			_overlay.albedo_color = Color(0, 0, 0, 0)
 		return
-	_overlay.albedo_color = Color(0.2, 0.45, 1.0, 0.25 + 0.15 * sin(Time.get_ticks_msec() / 60.0))
+	var c := Color(1.0, 0.45, 0.05) if def["ability"] == "smash" else Color(0.35, 1.0, 0.35) if def["ability"] == "super" else Color(0.2, 0.45, 1.0)
+	c.a = 0.25 + 0.15 * sin(Time.get_ticks_msec() / 60.0)
+	_overlay.albedo_color = c

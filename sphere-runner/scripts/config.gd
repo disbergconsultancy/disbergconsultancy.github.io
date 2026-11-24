@@ -110,26 +110,28 @@ const METER_PER_COIN := 0.035
 const METER_PER_CLOSE := 0.11
 const SUPER_JUMP_V := 27.0
 const SMASH_POINTS := 15
+## The game's moves -> the clip names in the hero models (Mixamo-style names, in place).
+const HERO_CLIPS := {"run": "Running", "jump": "Jump", "slide": "Running Slide", "stumble": "Stumble",
+	"crash": "Falling Back Death", "cheer": "Victory"}
 const CHARS := {
 	"runner": {"name": "Runner", "desc": "Baseline. Strength: longer combo window. Ability: Focus, time slows down for 3 s.",
 		"lane_mul": 1.0, "jump_v": 14.0, "float_time": 0.45, "combo_time": 3.5, "meter_mul": 1.0,
 		"ability": "focus", "ability_time": 3.0, "ability_max": 3.0, "smash_extend": 0.0, "label": "FOCUS",
 		"body": Color("3380ff"), "limb": Color("2559c4"), "accent": Color("f0f0f5"), "visor": Color("29d4ff"),
 		"shape": {"torso_w": 1.0, "shoulder": 1.0, "arm_t": 1.0, "hand": 1.0, "leg_len": 1.0, "leg_t": 1.0, "head": 1.0},
-		"gear": "headband", "model": "res://assets/heroes/ninja.glb", "model_h": 1.5,
-		"clips": {"run": "Running", "jump": "Jump", "slide": "Running Slide", "stumble": "Stumble", "crash": "Falling Back Death", "cheer": "Victory"}},
+		"gear": "headband", "model": "res://assets/heroes/ninja.glb", "model_h": 1.5, "clips": HERO_CLIPS},
 	"smasher": {"name": "Smasher", "desc": "Heavy. Strength: meter fills 40% faster. Weakness: lower jump. Ability: Smash through blocks for 3 s; each block smashed adds 0.4 s, up to 5 s.",
 		"lane_mul": 1.0, "jump_v": 12.5, "float_time": 0.3, "combo_time": 2.5, "meter_mul": 1.4,
 		"ability": "smash", "ability_time": 3.0, "ability_max": 5.0, "smash_extend": 0.4, "label": "SMASH", "heavy": true,
 		"body": Color("3a4658"), "limb": Color("2a3342"), "accent": Color("ffb020"), "visor": Color("ffb020"),
 		"shape": {"torso_w": 1.3, "shoulder": 1.25, "arm_t": 1.45, "hand": 1.7, "leg_len": 0.88, "leg_t": 1.35, "head": 0.95},
-		"gear": "horns"},
+		"gear": "horns", "model": "res://assets/heroes/bastion.glb", "model_h": 1.6, "clips": HERO_CLIPS},
 	"jumper": {"name": "Jumper", "desc": "Light. Strength: jumps higher (about 3 m) and floats longer. Weakness: more time in the air. Ability: Super jump, a huge leap over anything.",
 		"lane_mul": 1.0, "jump_v": 16.5, "float_time": 0.8, "combo_time": 2.5, "meter_mul": 1.0,
 		"ability": "super", "ability_time": 0.0, "ability_max": 0.0, "smash_extend": 0.0, "label": "SUPER JUMP",
 		"body": Color("22b357"), "limb": Color("15803d"), "accent": Color("eafff0"), "visor": Color("b6ff3d"),
 		"shape": {"torso_w": 0.85, "shoulder": 0.9, "arm_t": 0.85, "hand": 1.0, "leg_len": 1.18, "leg_t": 0.85, "head": 1.0},
-		"gear": "antenna"},
+		"gear": "antenna", "model": "res://assets/heroes/kestrel.glb", "model_h": 1.72, "clips": HERO_CLIPS},
 }
 
 # --- Planets ----------------------------------------------------------
