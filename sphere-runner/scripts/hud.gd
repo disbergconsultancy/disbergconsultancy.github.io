@@ -84,13 +84,13 @@ func _ready() -> void:
 # Helpers
 # =====================================================================
 
+## Places c from the top of the screen. With `right`, it is attached to both side edges
+## (so it stretches and stays centred on wider screens); otherwise it sits at `left`.
 func _place(c: Control, parent: Control, left: float, top: float, right := -1.0, bottom := -1.0) -> Control:
-	parent.add_child(c)
-	c.position = Vector2(left, top)
-	if right >= 0.0:
-		c.size.x = 720.0 - left - right
+	_anchor(c, parent, left, top, right, 0.0)
 	if bottom >= 0.0:
-		c.size.y = 1280.0 - top - bottom
+		c.anchor_bottom = 1.0
+		c.offset_bottom = -bottom
 	return c
 
 
