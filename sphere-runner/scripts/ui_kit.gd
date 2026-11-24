@@ -16,6 +16,9 @@ static var _tex := {}
 
 
 static func font(weight := 700) -> Font:
+	# Pixelify Sans comes in 400, 600 and 700: other weights use the nearest one (a missing
+	# file would fall back to the engine's smooth default font).
+	weight = 400 if weight < 500 else (600 if weight < 650 else 700)
 	if not _fonts.has(weight):
 		var f: FontFile = load("res://assets/fonts/PixelifySans-%d.ttf" % weight)
 		_fonts[weight] = f

@@ -532,7 +532,10 @@ func _front_size() -> Vector2:
 
 
 func _back_size() -> Vector2:
-	return Vector2(minf(_car.size.x - 36.0, 700.0), minf(_car.size.y - 10.0, 960.0))
+	var h := minf(_car.size.y - 10.0, 960.0)
+	if _flipped and _holder and is_instance_valid(_holder) and _holder.get_child_count() > 0:
+		h = minf(h, _holder.get_child(0).get_combined_minimum_size().y)   # as tall as its contents
+	return Vector2(minf(_car.size.x - 36.0, 700.0), h)
 
 
 ## The front of a hero card: portrait, name and level, ability, stat bars, points badge.
@@ -591,8 +594,12 @@ func _hero_back(c: String) -> Control:
 	var list := _vbox(10)
 	card.add_child(list)
 	var head := _hbox(12)
-	head.add_child(_portrait(c, 60))
-	var hl := UI.label("%s · LV %d" % [Config.CHARS[c]["name"].to_upper(), pr["lvl"]], 34)
+	var back := UI.button("", "stone", 28, "left", 64)
+	back.custom_minimum_size = Vector2(64, 64)
+	back.pressed.connect(_flip)
+	head.add_child(back)
+	head.add_child(_portrait(c, 56))
+	var hl := UI.label("%s · LV %d" % [Config.CHARS[c]["name"].to_upper(), pr["lvl"]], 32)
 	hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(hl)
 	var fp := Progress.free_points(c)
@@ -613,8 +620,8 @@ func _hero_back(c: String) -> Control:
 			var id: String = tree[b][2][tier]
 			var rank: int = pr["alloc"].get(id, 0)
 			var open_: bool = Progress.branch_points(c, b) >= Progress.TIER_REQ[tier]
-			var nb := UI.button("", "stone" if open_ else "off", 36 if open_ else 28, NODE_ICONS.get(id, "star") if open_ else "lock", 80)
-			nb.custom_minimum_size = Vector2(80, 80)
+			var nb := UI.button("", "stone" if open_ else "off", 32 if open_ else 24, NODE_ICONS.get(id, "star") if open_ else "lock", 72)
+			nb.custom_minimum_size = Vector2(72, 72)
 			nb.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 			UI.set_icon_color(nb, colr if open_ else Color("7a7a82"))
 			if _sk_sel == Vector2i(b, tier):
@@ -627,7 +634,7 @@ func _hero_back(c: String) -> Control:
 			pips.alignment = BoxContainer.ALIGNMENT_CENTER
 			for i in Progress.max_rank(tier):
 				var pip := ColorRect.new()
-				pip.custom_minimum_size = Vector2(14, 14)
+				pip.custom_minimum_size = Vector2(12, 12)
 				pip.color = colr if i < rank else Color("2b2d36")
 				pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 				pips.add_child(pip)
@@ -658,27 +665,23 @@ func _hero_back(c: String) -> Control:
 	dl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	dl.custom_minimum_size.x = 400
 	dv.add_child(dl)
-	var learn := UI.button("LEARN · 1 POINT", "green", 28, "check", 76)
+	var row := _hbox(10)
+	var learn := UI.button("LEARN · 1 POINT", "green", 26, "check", 70)
+	learn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	UI.disable(learn, not Progress.can_learn(c, sb, stier))
 	learn.pressed.connect(func():
 		Progress.learn(c, sb, stier)
 		progress_changed.emit()
 		_render_heroes())
-	dv.add_child(learn)
-	list.add_child(detail)
-	var row := _hbox(10)
-	var back := UI.button("FLIP BACK", "stone", 24, "left", 66)
-	back.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	back.pressed.connect(_flip)
-	row.add_child(back)
-	var reset := UI.button("RESET", "stone", 20, "", 66)
+	row.add_child(learn)
+	var reset := UI.button("RESET", "stone", 20, "", 70)
 	reset.custom_minimum_size.x = 110
 	reset.pressed.connect(func():
 		Progress.respec(c)
 		progress_changed.emit()
 		_render_heroes())
 	row.add_child(reset)
-	var test := UI.button("+1 LV", "stone", 20, "", 66)
+	var test := UI.button("+1 LV", "stone", 20, "", 70)
 	test.custom_minimum_size.x = 100
 	test.pressed.connect(func():
 		if pr["lvl"] < Progress.MAX_LEVEL:
@@ -687,7 +690,8 @@ func _hero_back(c: String) -> Control:
 			Progress.save()
 		_render_heroes())
 	row.add_child(test)
-	list.add_child(row)
+	dv.add_child(row)
+	list.add_child(detail)
 	return card
 
 
