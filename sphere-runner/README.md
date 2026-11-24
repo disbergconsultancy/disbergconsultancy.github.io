@@ -32,7 +32,8 @@ Everything is built in code (no editor scenes besides `scenes/main.tscn`), so it
 | `assets/bosses/` | Boss models (Tripo, supplied by the project owner; see its README for the licence note), simplified for mobile: Minotaur, Sand Wyvern, Ice Titan (ice golem), Magma Giant (lava monster). Animated in code in `boss.gd` |
 | `scripts/swipe_input.gd` | Swipes (vertical-friendly zones), taps, double-taps, hold |
 | `scripts/hud.gd` | HUD, ability meter, power-up list, boss bar, menu (heroes, skills, shop), settings (music, sound effects, vibration, pixel world, difficulty, boss test), skill tree, core shop, crash screen |
-| `scripts/sfx.gd` | 8-bit sound effects synthesized at startup (square with duty, triangle, saw, pitched noise) and the music player (looping tracks with a cross-fade) |
+| `scripts/sfx.gd` | Sound effects (Kenney files where present, footsteps per world; otherwise 8-bit effects synthesized at startup (square with duty, triangle, saw, pitched noise) and the music player (looping tracks with a cross-fade) |
+| `assets/audio/sfx/` | Sound effects from Kenney's CC0 packs (Digital Audio, Impact Sounds, Interface Sounds, Music Jingles; kenney.nl), picked and levelled by `tools/pick_sfx.py`. Effects without a file stay synthesized (coin, slide, swish, dash) |
 | `assets/audio/music/` | Chiptune loops per world plus menu and boss, made by `tools/gen_music.py` (numpy + ffmpeg): `python3 tools/gen_music.py [names]` |
 
 ## Self-test (headless)

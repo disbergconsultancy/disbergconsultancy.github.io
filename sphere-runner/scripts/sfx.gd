@@ -1,7 +1,9 @@
 class_name Sfx
 extends Node
-## Sound: 8-bit style effects synthesized at startup (no audio files) and chiptune music
+## Sound: effects from Kenney's CC0 packs (assets/audio/sfx, picked by tools/pick_sfx.py),
+## 8-bit effects synthesized at startup for the rest (and as a fallback), and chiptune music
 ## loops (assets/audio/music, made by tools/gen_music.py) with a short cross-fade.
+## Landing uses footsteps that match the ground of the world (grass, sand, snow, rock).
 ## Effects: a list of notes [from_hz, to_hz, seconds, wave, volume, start_delay, duty].
 ## Waves: square (duty), triangle, saw, sine, noise (pitch = how fast it changes).
 
@@ -46,12 +48,17 @@ var _music: Array[AudioStreamPlayer] = []   # two players for cross-fades
 var _track := ""
 var _fade := 0.0
 var _rng := RandomNumberGenerator.new()
+var surface := "grass"         # which footstep "land" plays
+const SURFACES := {"meadow": "grass", "dunes": "carpet", "glacier": "snow", "ember": "concrete"}
 
 
 func _ready() -> void:
 	_rng.seed = 7
 	for name in EFFECTS:
 		_streams[name] = _render(EFFECTS[name])
+	for f in ResourceLoader.list_directory("res://assets/audio/sfx"):
+		if f.ends_with(".ogg"):
+			_streams[f.get_basename()] = load("res://assets/audio/sfx/" + f)
 	for i in VOICES:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
@@ -65,6 +72,8 @@ func _ready() -> void:
 
 ## pitch: playback speed (1 = as made); used for the coin chime climbing with the combo.
 func play(name: String, pitch := 1.0) -> void:
+	if name == "land" and _streams.has("land_" + surface):
+		name = "land_" + surface
 	if not enabled or not _streams.has(name):
 		return
 	var p := _players[_next]
@@ -79,6 +88,7 @@ func music(name: String) -> void:
 	if name == _track:
 		return
 	_track = name
+	surface = SURFACES.get(name, surface)
 	var old := _music[0]
 	var new := _music[1]
 	_music = [new, old]
