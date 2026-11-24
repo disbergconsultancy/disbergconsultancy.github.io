@@ -38,7 +38,8 @@ static func box(name: String, pad := 18.0) -> StyleBoxTexture:
 	return sb
 
 
-## Text with a hard pixel shadow (or a thick outline for big titles).
+## Text with a hard pixel shadow (or a thick outline for big titles). Vertically centred,
+## so it lines up with icons and the boxes it sits in.
 static func label(text: String, size := 32, color := Color.WHITE, weight := 700, outline := false) -> Label:
 	var l := Label.new()
 	l.text = text
@@ -56,8 +57,14 @@ static func label(text: String, size := 32, color := Color.WHITE, weight := 700,
 		ls.shadow_offset = Vector2(s + 2, s + 2)
 		ls.shadow_size = ls.outline_size
 	l.label_settings = ls
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
+
+
+## Icon sizes snap to whole multiples of the 8 px source, so every icon pixel is the same size.
+static func px(size: float) -> float:
+	return maxf(8.0, round(size / 8.0) * 8.0)
 
 
 ## An 8x8 pixel icon, scaled up without smoothing and tinted.
@@ -66,45 +73,81 @@ static func icon(name: String, size := 40.0, color := Color.WHITE) -> TextureRec
 	t.texture = tex("icon_" + name)
 	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	t.custom_minimum_size = Vector2(size, size)
+	var s := px(size)
+	t.custom_minimum_size = Vector2(s, s)
+	t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	t.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	t.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	t.modulate = color
 	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return t
 
 
-## A block button. kind: stone | green | gold | red | blue. Text with an ink outline.
-static func button(text: String, kind := "stone", size := 34, icon_name := "", height := 96.0) -> Button:
+## A block button. kind: stone | green | gold | red | blue | off. Icon and text are one
+## group, centred in the face (side by side, or stacked with vertical = true).
+## Change them later with set_text() / set_icon_color() / disable().
+static func button(text: String, kind := "stone", size := 34, icon_name := "", height := 96.0, vertical := false, icon_size := 0.0) -> Button:
 	var b := Button.new()
-	b.text = text
 	b.custom_minimum_size = Vector2(0, height)
 	b.focus_mode = Control.FOCUS_NONE
-	b.add_theme_stylebox_override("normal", box("btn_" + kind, 6))
-	b.add_theme_stylebox_override("hover", box("btn_" + kind, 6))
-	b.add_theme_stylebox_override("pressed", box("btn_%s_down" % kind, 6))
+	style(b, kind)
 	b.add_theme_stylebox_override("disabled", box("btn_off", 6))
 	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	b.add_theme_font_override("font", font(700))
-	b.add_theme_font_size_override("font_size", size)
-	for k in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
-		b.add_theme_color_override(k, Color.WHITE)
-	b.add_theme_color_override("font_disabled_color", Color("9a9aa0"))
-	b.add_theme_color_override("font_outline_color", INK)
-	b.add_theme_constant_override("outline_size", maxi(6, size / 6))
+	var group: BoxContainer = VBoxContainer.new() if vertical else HBoxContainer.new()
+	group.alignment = BoxContainer.ALIGNMENT_CENTER
+	group.add_theme_constant_override("separation", 6 if vertical else 14)
+	group.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(group)
+	group.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	group.offset_left = 2 * U
+	group.offset_right = -2 * U
 	if icon_name != "":
-		b.icon = tex("icon_" + icon_name)
-		b.expand_icon = true
-		b.add_theme_constant_override("icon_max_width", int(size * 1.1))
-		b.add_theme_constant_override("h_separation", 16)
-		b.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		var ic := icon(icon_name, icon_size if icon_size > 0.0 else size * (1.0 if text != "" else 1.4))
+		group.add_child(ic)
+		b.set_meta("icon", ic)
+	if text != "":
+		var l := label(text, size)
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		group.add_child(l)
+		b.set_meta("label", l)
 	return b
 
 
-## A small dark block holding a row of things (icon + text).
-static func chip(children: Array, kind := "chip") -> PanelContainer:
+static func style(b: Button, kind: String) -> void:
+	b.add_theme_stylebox_override("normal", box("btn_" + kind, 6))
+	b.add_theme_stylebox_override("hover", box("btn_" + kind, 6))
+	b.add_theme_stylebox_override("pressed", box("btn_%s_down" % kind if kind != "off" else "btn_off", 6))
+
+
+static func set_text(b: Button, text: String) -> void:
+	if b.has_meta("label"):
+		b.get_meta("label").text = text
+
+
+static func get_text(b: Button) -> String:
+	return b.get_meta("label").text if b.has_meta("label") else ""
+
+
+static func set_icon_color(b: Button, c: Color) -> void:
+	if b.has_meta("icon"):
+		b.get_meta("icon").modulate = c
+
+
+static func disable(b: Button, off: bool) -> void:
+	b.disabled = off
+	for k in ["label", "icon"]:
+		if b.has_meta(k):
+			b.get_meta(k).modulate.a = 0.45 if off else 1.0
+
+
+## A small dark block holding a row of things (icon + text), centred. min: its smallest size.
+static func chip(children: Array, kind := "chip", min := Vector2.ZERO) -> PanelContainer:
 	var p := PanelContainer.new()
 	p.add_theme_stylebox_override("panel", box(kind, 4))
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.custom_minimum_size = min
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER

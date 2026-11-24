@@ -159,34 +159,35 @@ func _build_run() -> void:
 	_run = _layer()
 	add_child(_run)
 	# Score and combo, top left
-	var tl := _vbox(8)
+	var tl := _vbox(10)
 	tl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_place(tl, _run, M, 24)
 	score_label = UI.label("0", 72, Color.WHITE, 700, true)
+	score_label.custom_minimum_size.y = 84      # same height as the coin chip: centres line up
 	tl.add_child(score_label)
 	combo_label = UI.label("", 30, Color("ff8c26"))
-	_combo_chip = UI.chip([combo_label])
+	_combo_chip = UI.chip([combo_label], "chip", Vector2(0, 64))
 	_combo_chip.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	tl.add_child(_combo_chip)
 	# Coins, lap and speed, top right
-	var tr := _vbox(8)
+	var tr := _vbox(10)
 	tr.alignment = BoxContainer.ALIGNMENT_BEGIN
 	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tr.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	_run.add_child(tr)
 	tr.offset_right = -M
-	tr.offset_top = 28
+	tr.offset_top = 24
 	tr.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_coin_val = UI.label("0", 34)
-	var coin_chip := UI.chip([UI.icon("coin", 36, UI.GOLD), _coin_val])
+	var coin_chip := UI.chip([UI.icon("coin", 40, UI.GOLD), _coin_val], "chip", Vector2(220, 84))
 	coin_chip.size_flags_horizontal = Control.SIZE_SHRINK_END
 	tr.add_child(coin_chip)
 	_where_val = UI.label("", 26)
-	var wchip := UI.chip([_where_val])
+	var wchip := UI.chip([_where_val], "chip", Vector2(220, 64))
 	wchip.size_flags_horizontal = Control.SIZE_SHRINK_END
 	tr.add_child(wchip)
 	_speed_val = UI.label("", 26)
-	var schip := UI.chip([_speed_val])
+	var schip := UI.chip([_speed_val], "chip", Vector2(220, 64))
 	schip.size_flags_horizontal = Control.SIZE_SHRINK_END
 	tr.add_child(schip)
 	info_label = Label.new()        # unused placeholder for old callers
@@ -198,7 +199,7 @@ func _build_run() -> void:
 	_boss_box.add_child(bb)
 	var bn := _hbox(10)
 	bn.alignment = BoxContainer.ALIGNMENT_CENTER
-	bn.add_child(UI.icon("skull", 36, Color("ff6b5e")))
+	bn.add_child(UI.icon("skull", 40, Color("ff6b5e")))
 	_boss_name = UI.label("", 36)
 	bn.add_child(_boss_name)
 	bb.add_child(bn)
@@ -218,12 +219,14 @@ func _build_run() -> void:
 	# Power-ups, bottom left (above the meter)
 	_powers_row = _hbox(10)
 	_powers_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_anchor(_powers_row, _run, M, -230, -1, 1.0)
+	_anchor(_powers_row, _run, M, -226, -1, 1.0)
 	powers_label = Label.new()      # unused placeholder for old callers
 	# Ability meter and pause, bottom
 	_meter_box = UI.panel("panel", 10)
+	_meter_box.custom_minimum_size.y = 136       # as tall as the pause block next to it
 	_meter_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var mb := _vbox(8)
+	mb.alignment = BoxContainer.ALIGNMENT_CENTER
 	_meter_box.add_child(mb)
 	var mrow := _hbox()
 	_meter_label = UI.label("", 30)
@@ -236,9 +239,8 @@ func _build_run() -> void:
 	_meter_bar = UI.seg_bar(12, Vector2(30, 26), 4)
 	mb.add_child(_meter_bar)
 	_anchor(_meter_box, _run, M, -148, 156, 1.0)
-	_pause_btn = UI.button("", "stone", 30, "pause", 136)
+	_pause_btn = UI.button("", "stone", 32, "pause", 136)
 	_pause_btn.custom_minimum_size = Vector2(112, 136)
-	_pause_btn.add_theme_constant_override("icon_max_width", 52)
 	_pause_btn.pressed.connect(func(): pause_pressed.emit())
 	_anchor(_pause_btn, _run, M, -148, -1, 1.0, true)
 
@@ -253,7 +255,7 @@ func set_info(coins_: int, where: String, kmh: int) -> void:
 func set_powers(list: Array) -> void:
 	_clear(_powers_row)
 	for p in list:
-		_powers_row.add_child(UI.chip([UI.icon(p[0], 30, p[2]), UI.label(p[1], 26)]))
+		_powers_row.add_child(UI.chip([UI.icon(p[0], 32, p[2]), UI.label(p[1], 28)], "chip", Vector2(0, 64)))
 
 
 func set_boss(visible_: bool, name := "", progress := 0.0, sub := "") -> void:
@@ -313,12 +315,9 @@ func _build_menu() -> void:
 	_anchor(bar, _menu, 18, -176, 18, 1.0)
 	bar.offset_bottom = -16
 	for t in [["home", "play", "RUN"], ["heroes", "hero", "HEROES"], ["skills", "star", "SKILLS"], ["shop", "coin", "SHOP"]]:
-		var b := UI.button(t[2], "stone", 30, t[1], 140)
+		var b := UI.button(t[2], "stone", 26, t[1], 140, true, 48)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.size_flags_vertical = Control.SIZE_SHRINK_END
-		b.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
-		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		b.add_theme_constant_override("icon_max_width", 52)
 		b.pressed.connect(show_tab.bind(t[0]))
 		bar.add_child(b)
 		_tab_buttons[t[0]] = b
@@ -327,17 +326,17 @@ func _build_menu() -> void:
 ## The coin wallet (top left) and the settings button (top right), on every menu page.
 func _topbar(page: Control, title := "") -> void:
 	_wallet_val = UI.label(str(Progress.wallet), 36)
-	var coins := UI.chip([UI.icon("coin", 40, UI.GOLD), _wallet_val])
-	_place(coins, page, M, 30)
+	var coins := UI.chip([UI.icon("coin", 40, UI.GOLD), _wallet_val], "chip", Vector2(0, 100))
+	_place(coins, page, M, 24)
 	if title != "":
 		var t := UI.label(title, 56, Color.WHITE, 700, true)
 		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_place(t, page, 0, 30, 0)
-	var gear := UI.button("", "stone", 30, "gear", 100)
+		t.custom_minimum_size.y = 100
+		_place(t, page, 0, 24, 0)
+	var gear := UI.button("", "stone", 32, "gear", 100)
 	gear.custom_minimum_size = Vector2(100, 100)
-	gear.add_theme_constant_override("icon_max_width", 48)
 	gear.pressed.connect(show_settings.bind(false))
-	_place(gear, page, 720 - M - 100, 24)
+	_anchor(gear, page, M, 24, -1, 0.0, true)
 
 
 func show_tab(t: String) -> void:
@@ -346,11 +345,9 @@ func show_tab(t: String) -> void:
 		_pages[k].visible = k == t
 	for k in _tab_buttons:
 		var on: bool = k == t
-		var kind := "green" if on else "stone"
 		var b: Button = _tab_buttons[k]
-		b.add_theme_stylebox_override("normal", UI.box("btn_" + kind, 6))
-		b.add_theme_stylebox_override("hover", UI.box("btn_" + kind, 6))
-		b.custom_minimum_size.y = 160 if on else 140
+		UI.style(b, "green" if on else "stone")
+		b.custom_minimum_size.y = 156 if on else 140
 	match t:
 		"home":
 			_render_home()
@@ -397,14 +394,13 @@ func _render_home() -> void:
 	plate.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	plate.add_child(UI.label("%s · LV %d" % [d["name"].to_upper(), Progress.prog[c]["lvl"]], 44))
 	mid.add_child(plate)
-	var ab := UI.label(_ability_line(c), 30, Color.WHITE, 600)
-	ab.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var ab := UI.chip([UI.label(_ability_line(c), 26, Color.WHITE, 600)], "chip", Vector2(0, 56))
+	ab.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	mid.add_child(ab)
-	_anchor(mid, p, 0, -100, 0, 0.5)
+	_anchor(mid, p, 0, -128, 0, 0.5)
 	for side in [-1, 1]:
-		var arrow := UI.button("", "stone", 30, "left" if side < 0 else "right", 118)
+		var arrow := UI.button("", "stone", 32, "left" if side < 0 else "right", 118)
 		arrow.custom_minimum_size = Vector2(96, 118)
-		arrow.add_theme_constant_override("icon_max_width", 48)
 		arrow.pressed.connect(_cycle_hero.bind(side))
 		_anchor(arrow, p, 40, 50, -1, 0.5, side > 0)
 	# Play and the best score / planet
@@ -414,8 +410,8 @@ func _render_home() -> void:
 	col.add_child(play)
 	var chips := _hbox(14)
 	chips.alignment = BoxContainer.ALIGNMENT_CENTER
-	chips.add_child(UI.chip([UI.icon("star", 32, UI.GOLD), UI.label("Best %d" % _best, 30)]))
-	chips.add_child(UI.chip([UI.label(Config.THEME["name"].capitalize(), 30)], "chip"))
+	chips.add_child(UI.chip([UI.icon("star", 32, UI.GOLD), UI.label("Best %d" % _best, 28)], "chip", Vector2(0, 64)))
+	chips.add_child(UI.chip([UI.label(Config.THEME["name"].capitalize(), 28)], "chip", Vector2(0, 64)))
 	col.add_child(chips)
 	_anchor(col, p, 44, -428, 44, 1.0)
 
@@ -489,7 +485,9 @@ func _render_heroes() -> void:
 			r.add_child(bar)
 			info.add_child(r)
 		if sel:
-			info.add_child(UI.chip([UI.label("SELECTED", 28, UI.GOLD)]))
+			var tag := UI.chip([UI.label("SELECTED", 28, UI.GOLD)], "chip", Vector2(220, 64))
+			tag.size_flags_horizontal = Control.SIZE_SHRINK_END
+			info.add_child(tag)
 		else:
 			var b := UI.button("SELECT", "stone", 28, "", 64)
 			b.size_flags_horizontal = Control.SIZE_SHRINK_END
@@ -513,27 +511,30 @@ func _render_skills() -> void:
 	var tree: Array = Progress.TREES[c]
 	# Hero line and free points
 	var head := _hbox(14)
+	var frame := UI.panel("block_white", 0)
+	frame.self_modulate = Color(Config.CHARS[c]["body"]) if c != "smasher" else Color("c98612")
 	var portrait := TextureRect.new()
 	portrait.texture = UI.tex("hero_" + c)
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	portrait.custom_minimum_size = Vector2(76, 76)
+	portrait.custom_minimum_size = Vector2(72, 72)
 	portrait.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	head.add_child(portrait)
+	frame.add_child(portrait)
+	head.add_child(frame)
 	var hl := UI.label("%s · LV %d" % [Config.CHARS[c]["name"].to_upper(), pr["lvl"]], 36)
 	hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(hl)
 	var fp := Progress.free_points(c)
-	head.add_child(UI.chip([UI.label("%d POINT%s" % [fp, "" if fp == 1 else "S"], 30, UI.GOLD)]))
-	_place(head, p, M, 150, M)
+	head.add_child(UI.chip([UI.label("%d POINT%s" % [fp, "" if fp == 1 else "S"], 30, UI.GOLD)], "chip", Vector2(0, 72)))
+	_place(head, p, M, 144, M)
 	# Three branches, tier 1 at the top
-	var grid := _hbox(10)
+	var grid := _hbox(12)
 	grid.alignment = BoxContainer.ALIGNMENT_CENTER
 	for b in 3:
 		var colr := Color(tree[b][1])
 		var col := _vbox(6)
 		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		col.alignment = BoxContainer.ALIGNMENT_BEGIN
-		var bt := UI.chip([UI.label(tree[b][0].to_upper(), 30, colr)])
+		var bt := UI.chip([UI.label(tree[b][0].to_upper(), 28, colr)], "chip", Vector2(196, 60))
 		bt.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		col.add_child(bt)
 		var bp := UI.label("%d points" % Progress.branch_points(c, b), 24, Color.WHITE, 600)
@@ -544,17 +545,12 @@ func _render_skills() -> void:
 			var rank: int = pr["alloc"].get(id, 0)
 			var mr := Progress.max_rank(tier)
 			var open_: bool = Progress.branch_points(c, b) >= Progress.TIER_REQ[tier]
-			var nb := UI.button("", "stone" if open_ else "off", 30, NODE_ICONS.get(id, "star") if open_ else "lock", 104)
+			var nb := UI.button("", "stone" if open_ else "off", 40 if open_ else 32, NODE_ICONS.get(id, "star") if open_ else "lock", 104)
 			nb.custom_minimum_size = Vector2(104, 104)
 			nb.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-			nb.add_theme_constant_override("icon_max_width", 52 if open_ else 40)
-			nb.add_theme_color_override("icon_normal_color", colr if open_ else Color("7a7a82"))
-			nb.add_theme_color_override("icon_hover_color", colr if open_ else Color("7a7a82"))
-			nb.add_theme_color_override("icon_pressed_color", colr if open_ else Color("7a7a82"))
-			nb.add_theme_color_override("icon_disabled_color", Color("7a7a82"))
+			UI.set_icon_color(nb, colr if open_ else Color("7a7a82"))
 			if _sk_sel == Vector2i(b, tier):
-				nb.add_theme_stylebox_override("normal", UI.box("btn_blue", 6))
-				nb.add_theme_stylebox_override("hover", UI.box("btn_blue", 6))
+				UI.style(nb, "blue")
 			nb.pressed.connect(func():
 				_sk_sel = Vector2i(b, tier)
 				_render_skills())
@@ -568,7 +564,7 @@ func _render_skills() -> void:
 				pips.add_child(pip)
 			col.add_child(pips)
 		grid.add_child(col)
-	_place(grid, p, 14, 236, 14)
+	_place(grid, p, M, 236, M)
 	# The selected skill
 	var detail := UI.panel("panel", 10)
 	var dv := _vbox(8)
@@ -595,7 +591,7 @@ func _render_skills() -> void:
 	var row := _hbox(10)
 	var learn := UI.button("LEARN · 1 POINT", "green", 30, "check", 84)
 	learn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	learn.disabled = not Progress.can_learn(c, sb, stier)
+	UI.disable(learn, not Progress.can_learn(c, sb, stier))
 	learn.pressed.connect(func():
 		Progress.learn(c, sb, stier)
 		progress_changed.emit()
@@ -649,12 +645,13 @@ func _render_shop() -> void:
 		card.add_child(row)
 		var slot := UI.panel("panel_stone", 6)
 		slot.custom_minimum_size = Vector2(96, 96)
-		var ic := UI.icon(CORE_ICONS.get(k, "star"), 60, Color(u["color"]))
+		var ic := UI.icon(CORE_ICONS.get(k, "star"), 56, Color(u["color"]))
 		slot.add_child(ic)
 		row.add_child(slot)
 		var info := _vbox(6)
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		info.add_child(UI.label(u["name"], 36))
+		info.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		info.add_child(UI.label(u["name"], 34))
 		var desc := UI.label(("Next: %s" % Progress.core_text(k, l + 1)) if l < u["max"] else Progress.core_text(k, l), 24, Color("e8e8ec"), 500)
 		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		desc.custom_minimum_size.x = 230
@@ -671,7 +668,7 @@ func _render_shop() -> void:
 		var buy := UI.button("MAX" if l >= u["max"] else str(price), "gold", 32, "" if l >= u["max"] else "coin", 100)
 		buy.custom_minimum_size.x = 168
 		buy.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		buy.disabled = l >= u["max"] or Progress.wallet < price
+		UI.disable(buy, l >= u["max"] or Progress.wallet < price)
 		buy.pressed.connect(func():
 			Progress.buy(k)
 			progress_changed.emit()
@@ -685,7 +682,7 @@ func _render_shop() -> void:
 		s.custom_minimum_size = Vector2(130, 130)
 		s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		s.self_modulate = Color(0.75, 0.75, 0.78)
-		s.add_child(UI.icon("lock", 56, Color("9a9aa0")))
+		s.add_child(UI.icon("lock", 48, Color("9a9aa0")))
 		skins.add_child(s)
 	list.add_child(skins)
 	_place(list, p, M, 160, M)
@@ -807,10 +804,9 @@ func _toggle(text: String, on: bool, set_fn: Callable) -> Control:
 	b.custom_minimum_size.x = 130
 	b.add_theme_stylebox_override("disabled", UI.box("btn_off", 6))
 	b.pressed.connect(func():
-		var now := b.text != "ON"
-		b.text = "ON" if now else "OFF"
-		for k in ["normal", "hover"]:
-			b.add_theme_stylebox_override(k, UI.box("btn_green" if now else "btn_off", 6))
+		var now := UI.get_text(b) != "ON"
+		UI.set_text(b, "ON" if now else "OFF")
+		UI.style(b, "green" if now else "off")
 		set_fn.call(now)
 		Progress.save()
 		settings_changed.emit())
