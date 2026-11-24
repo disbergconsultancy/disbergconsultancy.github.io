@@ -26,6 +26,8 @@ var _speed_btn: Button
 var _play_btn: Button
 var _cam_btn: Button
 var _pix_btn: Button
+var _clip_btn: Button
+var clips_on := true
 var _vy := 0.0
 var _py := 0.0
 var _grounded := true
@@ -53,6 +55,9 @@ func close() -> void:
 	g.character.position = Vector3(0, g.planet.radius, 0)
 	g.character.reset_anim()
 	g.character.set_dead(false)
+	if g.character is ModelCharacter:
+		(g.character as ModelCharacter).use_clips = true
+		(g.character as ModelCharacter).force_clip = ""
 	g.lab = null
 	g._to_menu()
 	queue_free()
@@ -68,6 +73,10 @@ func _restart() -> void:
 	_slide = 0.0
 	g.character.reset_anim()
 	g.character.set_dead(false)
+	if g.character is ModelCharacter:
+		var mc: ModelCharacter = g.character
+		mc.use_clips = clips_on
+		mc.force_clip = "cheer" if move == "cheer" and clips_on and mc.clips.has("cheer") else ""
 	_select_buttons()
 
 
@@ -199,6 +208,12 @@ func _build_ui() -> void:
 	next.custom_minimum_size.x = 84
 	next.pressed.connect(_hero.bind(1))
 	top.add_child(next)
+	_clip_btn = UI.button("CLIPS", "blue", 22, "", 84)
+	_clip_btn.custom_minimum_size.x = 120
+	_clip_btn.pressed.connect(func():
+		clips_on = not clips_on
+		_restart())
+	top.add_child(_clip_btn)
 	var done := UI.button("", "red", 30, "check", 84)
 	done.custom_minimum_size.x = 84
 	done.pressed.connect(close)
@@ -283,6 +298,10 @@ func _select_buttons() -> void:
 	UI.set_text(_speed_btn, "SPEED %s" % ["1x", "½x", "¼x"][speed_i])
 	UI.set_text(_cam_btn, cam.to_upper())
 	UI.set_text(_pix_btn, "PIXEL ON" if pixel else "PIXEL OFF")
+	var has_clips: bool = g.character is ModelCharacter and not (g.character as ModelCharacter).clips.is_empty()
+	_clip_btn.visible = has_clips
+	UI.set_text(_clip_btn, "CLIPS" if clips_on else "CODE")
+	UI.style(_clip_btn, "blue" if clips_on else "stone")
 	var ic: TextureRect = _play_btn.get_meta("icon")
 	ic.texture = UI.tex("icon_" + ("play" if paused else "pause"))
 

@@ -23,6 +23,12 @@ var _rest := {}                   # bone index -> rest global basis (skeleton sp
 var _fix := {}                    # bone name -> straightening rotation (character space)
 var _idx := {}                    # bone name -> index
 var _overlay := StandardMaterial3D.new()
+var anim: AnimationPlayer          # the model's animation clips (if it has any)
+var clips := {}                    # move -> clip name (from the character's "clips")
+var use_clips := true              # Hero Lab: CLIPS / CODE
+var force_clip := ""               # Hero Lab: show this move's clip on a loop
+var _clip := ""                    # the move whose clip is playing
+var _restart := ""                 # a move whose clip starts again (a new jump, slide...)
 
 
 func build(d: Dictionary) -> void:
@@ -93,6 +99,19 @@ func build(d: Dictionary) -> void:
 		var f := Basis(Quaternion(dir, Vector3.DOWN)) if dir.length() > 0.0 else Basis()
 		_fix[name] = f
 		acc[name] = parent_fix * f
+	# animation clips: moves mapped to clip names in config (e.g. "run": "Running")
+	clips = {}
+	_clip = ""
+	var aps := model.find_children("*", "AnimationPlayer", true, false)
+	anim = aps[0] if aps.size() > 0 else null
+	if anim:
+		# clips advance with the game's own time (pause, slow motion, Focus), not on their own
+		anim.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+		for move in d.get("clips", {}):
+			var name: String = d["clips"][move]
+			if anim.has_animation(name):
+				clips[move] = name
+				anim.get_animation(name).loop_mode = Animation.LOOP_LINEAR if move == "run" else Animation.LOOP_NONE
 	_overlay.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_overlay.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_overlay.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
@@ -103,6 +122,59 @@ func build(d: Dictionary) -> void:
 ## "mixamorig:LeftArm" / "mixamorig_LeftArm" (Godot renames ':' on import) -> "LeftArm"
 static func _short(bone: String) -> String:
 	return bone.replace("mixamorig:", "").replace("mixamorig_", "")
+
+
+func event(name: String, arg := 0.0) -> void:
+	super.event(name, arg)
+	if name in ["jump", "jump2", "slide", "stumble", "crash", "cheer"]:
+		_restart = "jump" if name == "jump2" else name
+
+
+## Which clip fits the moment ("" = none: the code-driven pose).
+func _choose(state: String, s: Dictionary) -> String:
+	if force_clip != "":
+		return force_clip
+	if state == "hit" or state == "over":
+		return "crash"
+	if state != "run" or s.get("hop", -1.0) >= 0.0 or s.get("orbit", false):
+		return ""
+	if stumble_t > 0.0:
+		return "stumble"
+	if s["grounded"]:
+		return "slide" if s["slide"] > 0.0 else "run"
+	return "jump"
+
+
+## With clips: the clip moves the skeleton; the toon layer (squash and stretch, the lane hop
+## and lean, the air flip, the crash flop) still moves the whole hero on top.
+func update_pose(dt: float, state: String, s: Dictionary) -> void:
+	var move := _choose(state, s) if (use_clips and anim) else ""
+	if move == "" or not clips.has(move):
+		if anim and anim.is_playing():
+			anim.stop()
+		_clip = ""
+		super.update_pose(dt, state, s)
+		return
+	var flip := _tick(dt, state, s)
+	var target := {}
+	if state == "run":
+		_lane_layer(target, s["grounded"] and s["slide"] <= 0.0, 0.0)
+	_springs(target, ["y", "rx", "ry", "rz"], dt, false)
+	_apply_pivot(s, flip)
+	var speed := 1.0
+	match move:
+		"run": speed = clampf(0.9 + s["speed"] * 0.035, 1.0, 1.9)
+		"jump": speed = 1.7
+		"slide": speed = 1.6
+		"stumble": speed = 1.2
+	if move != _clip or _restart == move:
+		anim.play(clips[move], 0.12 if _clip != "" else 0.0)
+		if move == "run" and _clip != "":
+			anim.seek(randf() * 0.05, true)
+		_clip = move
+	_restart = ""
+	anim.speed_scale = 1.0
+	anim.advance(dt * speed)
 
 
 func _first_child(i: int) -> int:

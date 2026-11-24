@@ -169,7 +169,7 @@ func _ready() -> void:
 				_test["row"] = a.substr(4)
 			elif a.begins_with("move="):     # force this boss move for the shot (e.g. move=rolling_boulder)
 				_test["move"] = a.substr(5)
-			elif a in ["skills", "shop", "over", "heroes", "settings", "pause", "missions", "flipreel", "taptest", "herosettings", "lab"]:
+			elif a in ["skills", "shop", "over", "heroes", "settings", "pause", "missions", "flipreel", "taptest", "herosettings", "lab", "labreel"]:
 				_test["screen"] = a
 	if not _test.is_empty():
 		Progress.tutorial_done = not ("trial" in args)   # tests skip the trial unless asked for
@@ -1892,6 +1892,22 @@ func _autotest_tick() -> void:
 			t.append("Learn on the open card -> points spent %d -> %d, still open %s" % [before, Progress.spent(Config.character), hud._flipped])
 			print("AUTOTEST hero cards (window %s): %s" % [DisplayServer.window_get_size(), ", ".join(out)])
 			print("AUTOTEST hero cards by touch: %s" % ", ".join(t))
+			get_tree().quit()
+			return
+		if _test.get("screen", "") == "labreel":      # Hero Lab frames: each move in turn (path with %03d)
+			open_lab()
+			var k := 0
+			for step_ in [["run", "side", 2.2], ["jump", "side", 1.6], ["slide", "side", 1.6], ["stumble", "side", 1.8],
+					["crash", "side", 2.0], ["cheer", "front", 1.8], ["run", "behind", 1.5]]:
+				lab.move = step_[0]
+				lab.cam = step_[1]
+				lab._restart()
+				for f in int(step_[2] * 30.0):
+					lab.tick(1.0 / 30.0)
+					await RenderingServer.frame_post_draw
+					get_viewport().get_texture().get_image().save_png(_test["path"] % k)
+					k += 1
+			print("AUTOTEST lab frames: ", k)
 			get_tree().quit()
 			return
 		if _test.get("screen", "") == "flipreel":     # frames of the hero card flip, flip back and a swipe
