@@ -100,6 +100,7 @@ A boss is **composed from parts**, all data-driven:
 - **Leaderboards**: Game Center / Google Play Games. Separate boards per level bracket, and one for the daily
   challenge.
 - **Boss earlier in a world**: let a boss appear in the distance before the final lap to set the stage.
+
 ## Parked
 - **Monetisation**: premium, ads or cosmetics only. To decide before building the cosmetics economy.
 
