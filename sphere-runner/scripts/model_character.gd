@@ -72,7 +72,7 @@ func build(d: Dictionary) -> void:
 				var m: StandardMaterial3D = src.duplicate()
 				m.emission_enabled = true
 				m.emission_texture = m.albedo_texture
-				m.emission = Color.WHITE
+				m.emission = Color.WHITE if m.albedo_texture else m.albedo_color   # untextured parts glow in their own colour
 				m.emission_energy_multiplier = d.get("model_glow", 0.18)
 				m.rim_enabled = true
 				m.rim = 0.25

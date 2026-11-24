@@ -119,7 +119,7 @@ const CHARS := {
 		"ability": "focus", "ability_time": 3.0, "ability_max": 3.0, "smash_extend": 0.0, "label": "FOCUS",
 		"body": Color("3380ff"), "limb": Color("2559c4"), "accent": Color("f0f0f5"), "visor": Color("29d4ff"),
 		"shape": {"torso_w": 1.0, "shoulder": 1.0, "arm_t": 1.0, "hand": 1.0, "leg_len": 1.0, "leg_t": 1.0, "head": 1.0},
-		"gear": "headband", "model": "res://assets/heroes/ninja.glb", "model_h": 1.5, "clips": HERO_CLIPS},
+		"gear": "headband", "model": "res://assets/heroes/ninja.glb", "model_h": 1.5, "model_glow": 0.04, "clips": HERO_CLIPS},
 	"smasher": {"name": "Smasher", "desc": "Heavy. Strength: meter fills 40% faster. Weakness: lower jump. Ability: Smash through blocks for 3 s; each block smashed adds 0.4 s, up to 5 s.",
 		"lane_mul": 1.0, "jump_v": 12.5, "float_time": 0.3, "combo_time": 2.5, "meter_mul": 1.4,
 		"ability": "smash", "ability_time": 3.0, "ability_max": 5.0, "smash_extend": 0.4, "label": "SMASH", "heavy": true,
@@ -131,7 +131,7 @@ const CHARS := {
 		"ability": "super", "ability_time": 0.0, "ability_max": 0.0, "smash_extend": 0.0, "label": "SUPER JUMP",
 		"body": Color("22b357"), "limb": Color("15803d"), "accent": Color("eafff0"), "visor": Color("b6ff3d"),
 		"shape": {"torso_w": 0.85, "shoulder": 0.9, "arm_t": 0.85, "hand": 1.0, "leg_len": 1.18, "leg_t": 0.85, "head": 1.0},
-		"gear": "antenna", "model": "res://assets/heroes/kestrel.glb", "model_h": 1.72, "clips": HERO_CLIPS},
+		"gear": "antenna", "model": "res://assets/heroes/kestrel.glb", "model_h": 1.72, "model_glow": 0.0, "clips": HERO_CLIPS},
 }
 
 # --- Planets ----------------------------------------------------------

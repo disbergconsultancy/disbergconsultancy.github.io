@@ -18,3 +18,7 @@ and `"model_h"` on the character in config.gd. It takes the block figure's poses
   the face and above the feet: leftover blade bits.
 - `node cut_webs.mjs in.glb out.glb show|cut` removes triangles whose corners follow different
   limbs (a hand and a leg): auto-rig leftovers that stretch into slivers when the hero runs.
+- `node recolor.mjs in.glb out.glb <hue 0-1> <saturation x> "r,g,b" <strength>` recolours the base
+  colour texture: red accents (scarf, belt) take the hue, the dark cloth the "r,g,b" tone, keeping
+  the shading; skin and light parts stay. Runner: `0.6 1.05 "0.52,0.56,0.64" 1` (grey and blue);
+  Jumper: `0.36 1.0 "0.9,0.92,0.88" 1` (white and green). Untextured parts (hair, plates) are kept.
